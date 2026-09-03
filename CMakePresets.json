@@ -1,0 +1,168 @@
+{
+    "version": 6,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 25,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "base",
+            "hidden": true,
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_CXX_STANDARD": "23",
+                "CMAKE_CXX_STANDARD_REQUIRED": "ON",
+                "CMAKE_CXX_EXTENSIONS": "OFF",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "LF_BUILD_TESTS": "ON",
+                "LF_WARNINGS_AS_ERRORS": "ON"
+            }
+        },
+        {
+            "name": "darwin-base",
+            "hidden": true,
+            "inherits": "base",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Darwin"
+            },
+            "toolchainFile": "${sourceDir}/cmake/toolchains/clang-darwin.cmake"
+        },
+        {
+            "name": "linux-base",
+            "hidden": true,
+            "inherits": "base",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            },
+            "toolchainFile": "${sourceDir}/cmake/toolchains/clang-linux.cmake"
+        },
+        {
+            "name": "windows-base",
+            "hidden": true,
+            "inherits": "base",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            },
+            "toolchainFile": "${sourceDir}/cmake/toolchains/clang-windows.cmake"
+        },
+        {
+            "name": "debug",
+            "displayName": "Debug",
+            "description": "Debug configuration with assertions and debug symbols",
+            "inherits": ["darwin-base", "linux-base", "windows-base"],
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "LF_ENABLE_TRACY": "OFF"
+            }
+        },
+        {
+            "name": "release",
+            "displayName": "Release",
+            "description": "Optimized release configuration",
+            "inherits": ["darwin-base", "linux-base", "windows-base"],
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "LF_ENABLE_TRACY": "OFF"
+            }
+        },
+        {
+            "name": "profile",
+            "displayName": "Profile",
+            "description": "Optimized configuration with Tracy profiling instrumentation",
+            "inherits": ["darwin-base", "linux-base", "windows-base"],
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "LF_ENABLE_TRACY": "ON"
+            }
+        },
+        {
+            "name": "asan",
+            "displayName": "AddressSanitizer",
+            "description": "AddressSanitizer configuration with symbols",
+            "inherits": ["darwin-base", "linux-base", "windows-base"],
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+                "LF_ENABLE_ASAN": "ON",
+                "LF_ENABLE_TRACY": "OFF"
+            }
+        },
+        {
+            "name": "tsan",
+            "displayName": "ThreadSanitizer",
+            "description": "ThreadSanitizer configuration for concurrency testing",
+            "inherits": ["darwin-base", "linux-base", "windows-base"],
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+                "LF_ENABLE_TSAN": "ON",
+                "LF_ENABLE_TRACY": "OFF"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "debug",
+            "configurePreset": "debug"
+        },
+        {
+            "name": "release",
+            "configurePreset": "release"
+        },
+        {
+            "name": "profile",
+            "configurePreset": "profile"
+        },
+        {
+            "name": "asan",
+            "configurePreset": "asan"
+        },
+        {
+            "name": "tsan",
+            "configurePreset": "tsan"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "debug",
+            "configurePreset": "debug",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "release",
+            "configurePreset": "release",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "profile",
+            "configurePreset": "profile",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "asan",
+            "configurePreset": "asan",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "tsan",
+            "configurePreset": "tsan",
+            "output": {
+                "outputOnFailure": true
+            }
+        }
+    ]
+}
