@@ -159,8 +159,8 @@ usize MpmcTaskQueue::size() const noexcept {
 
 TaskScheduler::TaskScheduler(const SchedulerConfig& config)
     : m_config(config)
-    , m_globalHigh(2048)
-    , m_globalNormal(4096)
+    , m_globalHigh(4096)
+    , m_globalNormal(std::max<usize>(config.initialDequeCapacity, 65536))
     , m_ioQueue(1024)
     , m_timelineDevice(config.timelineDevice)
 {
@@ -169,7 +169,7 @@ TaskScheduler::TaskScheduler(const SchedulerConfig& config)
     m_ioWorkerCount = config.ioWorkerCount;
 
     // Allocate contiguous aligned WorkerState array
-    WorkerState::s_defaultInitialCapacity = (config.initialDequeCapacity > 0) ? config.initialDequeCapacity : 1024;
+    WorkerState::s_defaultInitialCapacity = (config.initialDequeCapacity > 0) ? config.initialDequeCapacity : 65536;
     m_workers = std::make_unique<WorkerState[]>(m_workerCount);
     for (u32 i = 0; i < m_workerCount; ++i) {
         m_workers[i].stealVictimSeed = (i + 1) * 2654435761u;
@@ -192,12 +192,12 @@ TaskScheduler::~TaskScheduler() {
     shutdown();
 }
 
-void TaskScheduler::schedule(TaskNode* task) noexcept {
+void TaskScheduler::schedule(TaskNode* task, bool notify) noexcept {
     LF_ASSERT(task != nullptr);
-    schedule(task, task->domain);
+    schedule(task, task->domain, notify);
 }
 
-void TaskScheduler::schedule(TaskNode* task, TaskDomain domain) noexcept {
+void TaskScheduler::schedule(TaskNode* task, TaskDomain domain, bool notify) noexcept {
     LF_ASSERT(task != nullptr);
     task->domain = domain;
 
@@ -223,10 +223,13 @@ void TaskScheduler::schedule(TaskNode* task, TaskDomain domain) noexcept {
                 // Producer is external thread: push to global injection queue
                 auto& queue = (task->priority == TaskPriority::High) ? m_globalHigh : m_globalNormal;
                 while (!queue.tryEnqueue(task)) {
+                    notifyWorker(m_workerCount);
                     cpu_pause();
                 }
             }
-            notifyWorker(1);
+            if (notify && m_sleepingCount.load(std::memory_order_relaxed) > 0) {
+                notifyWorker(1);
+            }
             break;
         }
     }
@@ -272,7 +275,7 @@ void TaskScheduler::scheduleBatch(std::span<TaskNode*> tasks) noexcept {
         }
     }
 
-    if (workerTaskCount > 0) {
+    if (workerTaskCount > 0 && m_sleepingCount.load(std::memory_order_relaxed) > 0) {
         notifyWorker(workerTaskCount);
     }
 }
@@ -395,6 +398,7 @@ DualPriorityQueue& TaskScheduler::workerDeque(u32 workerIndex) noexcept {
 void TaskScheduler::workerLoop(u32 workerIndex) noexcept {
     t_workerIndex = workerIndex;
     t_currentScheduler = this;
+    t_canInlineTask = true;
 
     char nameBuf[32];
     std::snprintf(nameBuf, sizeof(nameBuf), "%.*s-%u",
@@ -408,12 +412,21 @@ void TaskScheduler::workerLoop(u32 workerIndex) noexcept {
         set_thread_affinity(coreId);
     }
 
-    constexpr u32 SPIN_COUNT = 64;
+    constexpr u32 SPIN_COUNT = 256;
+
+    auto executeWithContinuation = [](TaskNode* initialTask) noexcept {
+        initialTask->execute();
+        while (t_nextInlineTask != nullptr) {
+            TaskNode* nextTask = t_nextInlineTask;
+            t_nextInlineTask = nullptr;
+            nextTask->execute();
+        }
+    };
 
     while (!m_stop.load(std::memory_order_acquire)) {
         TaskNode* task = findWork(workerIndex);
         if (task != nullptr) {
-            task->execute();
+            executeWithContinuation(task);
             continue;
         }
 
@@ -428,7 +441,7 @@ void TaskScheduler::workerLoop(u32 workerIndex) noexcept {
             }
         }
         if (foundDuringSpin && task != nullptr) {
-            task->execute();
+            executeWithContinuation(task);
             continue;
         }
 
@@ -436,7 +449,7 @@ void TaskScheduler::workerLoop(u32 workerIndex) noexcept {
         pollTimelineFallback();
         task = findWork(workerIndex);
         if (task != nullptr) {
-            task->execute();
+            executeWithContinuation(task);
             continue;
         }
 
@@ -453,7 +466,7 @@ void TaskScheduler::workerLoop(u32 workerIndex) noexcept {
         task = findWork(workerIndex);
         if (task != nullptr) {
             m_sleepingCount.fetch_sub(1, std::memory_order_relaxed);
-            task->execute();
+            executeWithContinuation(task);
             continue;
         }
 
@@ -466,7 +479,7 @@ void TaskScheduler::workerLoop(u32 workerIndex) noexcept {
 
     // Drain remaining tasks in local deque on shutdown
     while (TaskNode* task = m_workers[workerIndex].deque.pop()) {
-        task->execute();
+        executeWithContinuation(task);
     }
 }
 
@@ -573,18 +586,24 @@ TaskNode* TaskScheduler::findWorkExternal() noexcept {
 }
 
 void TaskScheduler::notifyWorker(u32 count) noexcept {
-    if (m_sleepingCount.load(std::memory_order_seq_cst) > 0) {
-        if (count == 1) {
-            m_wakeSignal.fetch_add(1, std::memory_order_seq_cst);
-            m_wakeSignal.notify_one();
+    u32 sleeping = m_sleepingCount.load(std::memory_order_relaxed);
+    if (sleeping == 0 || count == 0) {
+        return;
+    }
+    u32 toWake = std::min(count, sleeping);
+    if (toWake == 0) {
+        return;
+    }
+    if (toWake == 1) {
+        m_wakeSignal.fetch_add(1, std::memory_order_release);
+        m_wakeSignal.notify_one();
+    } else {
+        m_wakeSignal.fetch_add(toWake, std::memory_order_release);
+        if (toWake >= m_workerCount) {
+            m_wakeSignal.notify_all();
         } else {
-            m_wakeSignal.fetch_add(count, std::memory_order_seq_cst);
-            if (count >= m_workerCount) {
-                m_wakeSignal.notify_all();
-            } else {
-                for (u32 i = 0; i < count; ++i) {
-                    m_wakeSignal.notify_one();
-                }
+            for (u32 i = 0; i < toWake; ++i) {
+                m_wakeSignal.notify_one();
             }
         }
     }

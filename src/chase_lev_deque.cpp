@@ -173,21 +173,36 @@ usize ChaseLevDeque::stealBatch(std::span<TaskNode*> destination) noexcept {
     if (stealCount > static_cast<u32>(destination.size())) {
         stealCount = static_cast<u32>(destination.size());
     }
-
-    usize stolen = 0;
-    for (u32 i = 0; i < stealCount; ++i) {
-        TaskNode* task = stealTop();
-        if (task == nullptr) {
-            break;
-        }
-        destination[stolen++] = task;
+    if (stealCount == 0) {
+        return 0;
     }
-    return stolen;
+
+    auto* buf = m_buffer.load(std::memory_order_acquire);
+
+    // Atomically advance m_top by stealCount using a single CAS
+    if (!m_top.compare_exchange_weak(
+        t, t + stealCount, std::memory_order_seq_cst, std::memory_order_relaxed))
+    {
+        return 0; // Contention: back off
+    }
+
+    // Safety recheck: in case the owner thread popped down concurrently
+    b = m_bottom.load(std::memory_order_seq_cst);
+    if (b < t + stealCount) {
+        u32 actualSteal = (b > t) ? (b - t) : 0;
+        m_top.store(t + actualSteal, std::memory_order_seq_cst);
+        stealCount = actualSteal;
+    }
+
+    for (u32 i = 0; i < stealCount; ++i) {
+        destination[i] = buf->load(t + i, std::memory_order_relaxed);
+    }
+    return stealCount;
 }
 
 usize ChaseLevDeque::stealBatch(ChaseLevDeque& destination) noexcept {
-    TaskNode* batch[64];
-    usize stolen = stealBatch(std::span<TaskNode*>(batch, 64));
+    TaskNode* batch[128];
+    usize stolen = stealBatch(std::span<TaskNode*>(batch, 128));
     for (usize i = 0; i < stolen; ++i) {
         destination.pushBottom(batch[i]);
     }

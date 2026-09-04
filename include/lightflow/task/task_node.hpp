@@ -27,6 +27,7 @@ struct SuccessorEdge {
     TaskNode* target{nullptr};
     SuccessorEdge* next{nullptr};
     int branch{-1};
+    bool isLoopBack{false};
 };
 
 /// Copyable/moveable wrapper around std::atomic enabling TaskNode aggregate semantics
@@ -123,6 +124,10 @@ struct alignas(lf::CACHELINE_SIZE) TaskNode {
     void unblockSuccessors() noexcept;
 
     /// Decrements dependency counter from an active completed predecessor.
+    /// Returns true if this decrement unblocked the task (inDegree transitioned to zero).
+    bool decrementActive() noexcept;
+
+    /// Decrements dependency counter from an active completed predecessor, scheduling to graph if unblocked.
     void decrementActive(TaskGraph* g) noexcept;
 
     /// Decrements dependency counter from an unselected/skipped predecessor.

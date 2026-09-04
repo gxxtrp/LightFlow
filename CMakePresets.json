@@ -104,6 +104,17 @@
                 "LF_ENABLE_TSAN": "ON",
                 "LF_ENABLE_TRACY": "OFF"
             }
+        },
+        {
+            "name": "coverage",
+            "displayName": "Coverage",
+            "description": "Code coverage instrumentation configuration",
+            "inherits": ["darwin-base", "linux-base", "windows-base"],
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "LF_ENABLE_COVERAGE": "ON",
+                "LF_ENABLE_TRACY": "OFF"
+            }
         }
     ],
     "buildPresets": [
@@ -126,6 +137,10 @@
         {
             "name": "tsan",
             "configurePreset": "tsan"
+        },
+        {
+            "name": "coverage",
+            "configurePreset": "coverage"
         }
     ],
     "testPresets": [
@@ -160,6 +175,13 @@
         {
             "name": "tsan",
             "configurePreset": "tsan",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "coverage",
+            "configurePreset": "coverage",
             "output": {
                 "outputOnFailure": true
             }

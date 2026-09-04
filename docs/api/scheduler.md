@@ -32,19 +32,28 @@ flowchart TD
 
 * **Worker Operations (LIFO)**: The worker pushes and pops from the bottom of its deque. Operating LIFO preserves hot cache locality for recently spawned sub-tasks.
 * **Thief Operations (FIFO)**: Idle thieves steal from the top of the victim's deque via atomic Compare-And-Swap (`CAS`). Operating FIFO steals the oldest, largest units of work (e.g., the top of a tree).
+* **$O(1)$ Atomic Batch Stealing (`stealBatch`)**: Rather than competing for single items in serialized CAS loops, idle thieves steal batches of up to $\lceil K / 2 \rceil$ tasks (up to 128 items) by advancing `m_top` via a single `compare_exchange_weak`. This amortizes cross-core bus synchronization to $O(1)$ per batch steal.
 
-### 2. Multi-Producer External Submissions (MPMC Queue)
+### 2. Thread-Local Single-Slot Inline Continuation
+When a worker finishes executing a task and decrements a successor's in-degree to 0:
+* The primary unblocked successor (`TaskDomain::Worker`) is placed directly into a thread-local slot [`t_nextInlineTask`](../../include/lightflow/scheduler/task_scheduler.hpp).
+* The worker loop consumes `t_nextInlineTask` iteratively on the same thread without ever pushing to or popping from the Chase-Lev deque.
+* **Cache Sympathy**: Serial dependency pipelines (e.g., $A \to B \to C$) achieve 100% L1/L2 cache hits, eliminating deque lock-free overhead entirely for linear graphs.
+
+### 3. Multi-Producer External Submissions (MPMC Queue)
 When non-worker threads (e.g., networking, audio, or game logic threads) submit tasks into the scheduler, they are enqueued into a bounded **Multi-Producer Multi-Consumer (MPMC) queue** based on Dmitry Vyukov's algorithm. It provides $O(1)$ atomic wait-free enqueue/dequeue, zero heap allocations, and complete ABA immunity.
 
-### 3. Two-Tier Adaptive Spin + Futex Parking
+### 4. Two-Tier Adaptive Spin + Futex Parking (with Wake Hysteresis)
 Traditional thread pools waste hundreds of microseconds sleeping and waking up on OS condition variables. LightFlow replaces `std::condition_variable` with a **two-tier adaptive backoff engine**:
 
 1. **Tier 1 (Adaptive Spin-Pause)**:  
-   When a worker runs out of work, it spins for a bounded number of iterations (e.g., 64–256 cycles) issuing architecture-optimized pause instructions:
+   When a worker runs out of work, it spins for up to 256 iterations issuing architecture-optimized pause instructions:
    * x86_64: `_mm_pause()` (relieves pipeline memory order replay penalties).
    * ARM64: `__builtin_arm_yield()` / `__asm__ volatile("yield")`.
 2. **Tier 2 (OS Native Futex Sleep)**:  
-   If no work is stolen after spinning, the worker parks itself using C++23 `std::atomic<uint32_t>::wait` (backed by Linux `futex`, macOS `__ulock_wait`, or Windows `WaitOnAddress`). When a task unblocks, the submitter wakes workers via `std::atomic<uint32_t>::notify_one()`.
+   If no work is stolen after spinning, the worker parks itself using C++23 `std::atomic<uint32_t>::wait` (backed by Linux `futex`, macOS `__ulock_wait`, or Windows `WaitOnAddress`).
+3. **Wake Hysteresis & Coalesced Notifications**:  
+   To eliminate kernel syscall overhead (`__ulock_wake` / `sys_futex`), `notifyWorker()` checks `m_sleepingCount.load(std::memory_order_relaxed)` and immediately fast-exits if all workers are awake. Furthermore, wide fan-out unblocking coalesces notifications every 64 tasks.
 
 ---
 
@@ -65,8 +74,8 @@ struct SchedulerConfig {
     std::span<const u32> coreAffinity{};
 
     /// Initial capacity for each worker's local Chase-Lev ring buffers.
-    /// Set >= max simultaneous ready burst tasks (e.g. 131,072) to eliminate growth.
-    usize initialDequeCapacity{1024};
+    /// Pre-sized to 65,536 by default to eliminate ring buffer reallocations during wide fan-outs.
+    usize initialDequeCapacity{65536};
 
     /// Number of dedicated background IO threads.
     u32 ioWorkerCount{1};
