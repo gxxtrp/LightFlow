@@ -1,14 +1,22 @@
 #include <catch2/catch_test_macros.hpp>
 #include <lightflow/lightflow.hpp>
+#include "test_harness.hpp"
 
 #include <array>
 #include <atomic>
+#include <csignal>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <new>
 #include <thread>
 #include <vector>
+
+#if !defined(_WIN32)
+    #include <sys/types.h>
+    #include <sys/wait.h>
+    #include <unistd.h>
+#endif
 
 #if defined(__SANITIZE_THREAD__) || defined(__SANITIZE_ADDRESS__) || \
     (defined(__has_feature) && (__has_feature(thread_sanitizer) || __has_feature(address_sanitizer))) || \
@@ -785,3 +793,215 @@ TEST_CASE("BlockPool static buffer factory (from_buffer) alignment, capacity, an
         REQUIRE(dst.available_slabs() == 2);
     }
 }
+
+// =============================================================================
+// Global Allocator Bootstrap & TaskGraph Integration Tests
+// =============================================================================
+
+namespace {
+
+struct ThreadSafeTracker {
+    std::atomic<usize> alloc_calls{0};
+    std::atomic<usize> free_calls{0};
+    std::atomic<usize> bytes_allocated{0};
+    std::atomic<usize> bytes_freed{0};
+    std::atomic<usize> current_bytes{0};
+};
+
+void* ts_tracker_alloc(usize bytes, usize alignment, void* user_data) noexcept {
+    auto* tracker = static_cast<ThreadSafeTracker*>(user_data);
+    void* ptr = nullptr;
+#if defined(_WIN32)
+    ptr = _aligned_malloc(bytes, alignment);
+#else
+    int res = ::posix_memalign(&ptr, alignment, bytes);
+    if (res != 0) {
+        return nullptr;
+    }
+#endif
+    if (ptr != nullptr && tracker != nullptr) {
+        tracker->alloc_calls.fetch_add(1, std::memory_order_relaxed);
+        tracker->bytes_allocated.fetch_add(bytes, std::memory_order_relaxed);
+        tracker->current_bytes.fetch_add(bytes, std::memory_order_relaxed);
+    }
+    return ptr;
+}
+
+void ts_tracker_free(void* ptr, usize bytes, usize /*alignment*/, void* user_data) noexcept {
+    if (ptr == nullptr) return;
+    auto* tracker = static_cast<ThreadSafeTracker*>(user_data);
+    if (tracker != nullptr) {
+        tracker->free_calls.fetch_add(1, std::memory_order_relaxed);
+        tracker->bytes_freed.fetch_add(bytes, std::memory_order_relaxed);
+        tracker->current_bytes.fetch_sub(bytes, std::memory_order_relaxed);
+    }
+#if defined(_WIN32)
+    _aligned_free(ptr);
+#else
+    ::free(ptr);
+#endif
+}
+
+} // anonymous namespace
+
+TEST_CASE("BlockPool global bootstrap and timing enforcement", "[memory][bootstrap]") {
+    BlockPool::reset_global_for_testing();
+    REQUIRE_FALSE(BlockPool::is_global_initialized());
+
+    CustomTrackingAllocator tracker{};
+    MemoryCallbacks custom{
+        .alloc = &test_custom_alloc,
+        .free = &test_custom_free,
+        .user_data = &tracker
+    };
+
+    SECTION("Configuring global callbacks before initialization succeeds") {
+        BlockPool::set_global_callbacks(custom);
+        const MemoryCallbacks& cb = BlockPool::global_callbacks();
+        REQUIRE(cb.alloc == &test_custom_alloc);
+        REQUIRE(cb.free == &test_custom_free);
+        REQUIRE(cb.user_data == &tracker);
+
+        // Global pool is still not initialized until first access
+        REQUIRE_FALSE(BlockPool::is_global_initialized());
+
+        // First access to BlockPool::global() initializes the pool using custom callbacks
+        BlockPool& global_pool = BlockPool::global();
+        REQUIRE(BlockPool::is_global_initialized());
+        REQUIRE(global_pool.callbacks().alloc == &test_custom_alloc);
+        REQUIRE(global_pool.callbacks().user_data == &tracker);
+        REQUIRE(tracker.alloc_calls >= 1);
+        REQUIRE(tracker.total_bytes_allocated >= BlockPool::DEFAULT_INITIAL_SLABS * SLAB_SIZE);
+
+        // Can acquire and release slabs through global pool
+        Slab* s = global_pool.acquire_slab();
+        REQUIRE(s != nullptr);
+        global_pool.release_slab(s);
+
+        // Calling set_global_callbacks AFTER initialization must trigger LF_ASSERT
+#if !defined(_WIN32) && !defined(NDEBUG)
+        pid_t pid = fork();
+        REQUIRE(pid >= 0);
+        if (pid == 0) {
+            // Child process: restore default SIGABRT so Catch2 doesn't intercept it
+            std::signal(SIGABRT, SIG_DFL);
+            if (freopen("/dev/null", "w", stderr) == nullptr) {}
+            if (freopen("/dev/null", "w", stdout) == nullptr) {}
+            CustomTrackingAllocator dummy_tracker{};
+            MemoryCallbacks dummy_cb{
+                .alloc = &test_custom_alloc,
+                .free = &test_custom_free,
+                .user_data = &dummy_tracker
+            };
+            BlockPool::set_global_callbacks(dummy_cb);
+            _exit(0);
+        }
+        int status = 0;
+        waitpid(pid, &status, 0);
+        REQUIRE(WIFSIGNALED(status));
+        REQUIRE(WTERMSIG(status) == SIGABRT);
+#else
+        REQUIRE(BlockPool::is_global_initialized());
+#endif
+    }
+
+    // Teardown and reset
+    BlockPool::reset_global_for_testing();
+    REQUIRE_FALSE(BlockPool::is_global_initialized());
+#if defined(LF_DISABLE_PLATFORM_ALLOCATOR)
+    lf::test::install_test_allocator();
+#endif
+}
+
+TEST_CASE("Custom allocator integration: multi-stage TaskGraph with parallelFor and condition branching", "[memory][integration]") {
+    BlockPool::reset_global_for_testing();
+
+    ThreadSafeTracker tracker{};
+    MemoryCallbacks custom{
+        .alloc = &ts_tracker_alloc,
+        .free = &ts_tracker_free,
+        .user_data = &tracker
+    };
+
+    BlockPool::set_global_callbacks(custom);
+
+    {
+        SchedulerConfig config{.workerCount = 4, .initialDequeCapacity = 2048};
+        TaskScheduler scheduler(config);
+
+        constexpr usize DATA_COUNT = 5000;
+        std::vector<u32> data(DATA_COUNT, 0);
+
+        TaskGraph graph;
+        std::atomic<bool> conditionBranchTaken{false};
+        std::atomic<usize> subflowCount{0};
+
+        // Stage 1: ParallelFor populating data array
+        auto parallelStage = graph.parallelFor("InitData", DATA_COUNT, 250, [&data](usize i) noexcept {
+            data[i] = static_cast<u32>(i * 3);
+        });
+
+        // Stage 2: Condition task checking if first element is 0 (branch 0)
+        auto conditionNode = graph.emplaceCondition("CheckData", [&data]() noexcept -> int {
+            return (data[0] == 0) ? 0 : 1;
+        });
+        parallelStage.precede(conditionNode);
+
+        // Stage 3: Dynamic Subflow executed on Branch 0
+        auto subflowTask = graph.emplaceSubflow("DynamicSubflow", [&](Subflow& sf) {
+            conditionBranchTaken.store(true, std::memory_order_release);
+            for (usize i = 0; i < 10; ++i) {
+                sf.emplace([&subflowCount, i, &data]() noexcept {
+                    for (usize j = i * 500; j < (i + 1) * 500; ++j) {
+                        data[j] += 1;
+                    }
+                    subflowCount.fetch_add(1, std::memory_order_release);
+                });
+            }
+        });
+
+        // Alternative branch 1 if condition failed (should be skipped)
+        auto fallbackTask = graph.emplace("Fallback", []() noexcept {
+            // Should not be executed
+        });
+
+        // Stage 4: Barrier verifying all results
+        std::atomic<bool> verificationPassed{false};
+        auto barrier = graph.emplace("Barrier", [&]() noexcept {
+            bool correct = true;
+            for (usize i = 0; i < DATA_COUNT; ++i) {
+                u32 expected = static_cast<u32>(i * 3 + 1);
+                if (data[i] != expected) {
+                    correct = false;
+                    break;
+                }
+            }
+            verificationPassed.store(correct, std::memory_order_release);
+        });
+
+        conditionNode.to(0) >> subflowTask >> barrier;
+        conditionNode.to(1) >> fallbackTask >> barrier;
+
+        Status status = scheduler.runAndWait(graph);
+        REQUIRE(status == Status::Success);
+        REQUIRE(graph.isCompleted());
+        REQUIRE(conditionBranchTaken.load(std::memory_order_acquire));
+        REQUIRE(subflowCount.load(std::memory_order_acquire) == 10);
+        REQUIRE(verificationPassed.load(std::memory_order_acquire));
+
+        // Verify telemetry from custom tracking allocator
+        REQUIRE(tracker.alloc_calls.load(std::memory_order_relaxed) > 0);
+        REQUIRE(tracker.bytes_allocated.load(std::memory_order_relaxed) >= BlockPool::DEFAULT_INITIAL_SLABS * SLAB_SIZE);
+    }
+
+    // After scheduler and graph destruction, reset global pool and verify clean deallocation
+    BlockPool::reset_global_for_testing();
+    REQUIRE(tracker.bytes_freed.load(std::memory_order_relaxed) == tracker.bytes_allocated.load(std::memory_order_relaxed));
+    REQUIRE(tracker.free_calls.load(std::memory_order_relaxed) == tracker.alloc_calls.load(std::memory_order_relaxed));
+    REQUIRE(tracker.current_bytes.load(std::memory_order_relaxed) == 0);
+
+#if defined(LF_DISABLE_PLATFORM_ALLOCATOR)
+    lf::test::install_test_allocator();
+#endif
+}
+

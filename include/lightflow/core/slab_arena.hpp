@@ -97,6 +97,8 @@ public:
 private:
     struct OversizedBlock {
         void* raw_ptr{nullptr};
+        usize total_bytes{0};
+        usize alignment{0};
         OversizedBlock* next{nullptr};
     };
 

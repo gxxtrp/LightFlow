@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
@@ -33,7 +34,6 @@ inline constexpr std::size_t SLAB_SIZE = 64 * 1024;
 
 // Assertion macro compiling to zero instructions in release builds
 #if !defined(NDEBUG)
-    #include <cassert>
     #define LF_ASSERT(expr) assert(expr)
 #else
     #define LF_ASSERT(expr) ((void)0)

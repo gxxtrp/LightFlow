@@ -15,7 +15,7 @@ endif()
 include(Catch)
 
 function(lightflow_add_test target_name source_file)
-    add_executable(${target_name} ${source_file})
+    add_executable(${target_name} ${source_file} test_harness.cpp)
     target_link_libraries(${target_name}
         PRIVATE
             lf::LightFlow

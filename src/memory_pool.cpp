@@ -1,6 +1,7 @@
 #include <lightflow/core/memory_pool.hpp>
 
 #include <cstdlib>
+#include <mutex>
 #include <new>
 
 #if defined(_WIN32)
@@ -320,9 +321,83 @@ Slab* BlockPool::allocate_chunk_and_acquire() noexcept {
     return acquired;
 }
 
+namespace {
+
+#if !defined(LF_DISABLE_PLATFORM_ALLOCATOR)
+MemoryCallbacks s_globalCallbacks = platform_memory_callbacks();
+#else
+MemoryCallbacks s_globalCallbacks = MemoryCallbacks{};
+#endif
+
+std::atomic<bool> s_globalPoolInitialized{false};
+alignas(BlockPool) std::byte s_globalPoolStorage[sizeof(BlockPool)];
+std::atomic<BlockPool*> s_globalPoolPtr{nullptr};
+std::mutex s_globalPoolMutex;
+
+struct GlobalPoolDestructor {
+    ~GlobalPoolDestructor() {
+        BlockPool* pool = s_globalPoolPtr.load(std::memory_order_relaxed);
+        if (pool != nullptr) {
+            pool->~BlockPool();
+            s_globalPoolPtr.store(nullptr, std::memory_order_relaxed);
+        }
+    }
+};
+
+GlobalPoolDestructor s_globalPoolDestructor;
+
+} // anonymous namespace
+
+void BlockPool::set_global_callbacks(const MemoryCallbacks& callbacks) noexcept {
+    LF_ASSERT(!s_globalPoolInitialized.load(std::memory_order_acquire) &&
+              "BlockPool::set_global_callbacks must be called before BlockPool::global() is initialized");
+    LF_ASSERT((callbacks.alloc == nullptr && callbacks.free == nullptr) ||
+              (callbacks.alloc != nullptr && callbacks.free != nullptr));
+
+    if (s_globalPoolInitialized.load(std::memory_order_acquire)) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(s_globalPoolMutex);
+    s_globalCallbacks = callbacks;
+}
+
+const MemoryCallbacks& BlockPool::global_callbacks() noexcept {
+    std::lock_guard<std::mutex> lock(s_globalPoolMutex);
+    return s_globalCallbacks;
+}
+
+bool BlockPool::is_global_initialized() noexcept {
+    return s_globalPoolInitialized.load(std::memory_order_acquire);
+}
+
+void BlockPool::reset_global_for_testing() noexcept {
+    std::lock_guard<std::mutex> lock(s_globalPoolMutex);
+    BlockPool* pool = s_globalPoolPtr.load(std::memory_order_relaxed);
+    if (pool != nullptr) {
+        pool->~BlockPool();
+        s_globalPoolPtr.store(nullptr, std::memory_order_release);
+    }
+    s_globalPoolInitialized.store(false, std::memory_order_release);
+#if !defined(LF_DISABLE_PLATFORM_ALLOCATOR)
+    s_globalCallbacks = platform_memory_callbacks();
+#else
+    s_globalCallbacks = MemoryCallbacks{};
+#endif
+}
+
 BlockPool& BlockPool::global() noexcept {
-    static BlockPool s_globalPool;
-    return s_globalPool;
+    BlockPool* pool = s_globalPoolPtr.load(std::memory_order_acquire);
+    if (pool == nullptr) {
+        std::lock_guard<std::mutex> lock(s_globalPoolMutex);
+        pool = s_globalPoolPtr.load(std::memory_order_relaxed);
+        if (pool == nullptr) {
+            s_globalPoolInitialized.store(true, std::memory_order_release);
+            pool = ::new (static_cast<void*>(s_globalPoolStorage)) BlockPool(s_globalCallbacks);
+            s_globalPoolPtr.store(pool, std::memory_order_release);
+        }
+    }
+    return *pool;
 }
 
 } // namespace lf

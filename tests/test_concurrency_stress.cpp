@@ -2,6 +2,7 @@
 #include <lightflow/lightflow.hpp>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <thread>
@@ -187,3 +188,74 @@ TEST_CASE("High-contention stress test: Multi-producer concurrent external task 
 
     CHECK(executedCount.load(std::memory_order_acquire) == TOTAL_TASKS);
 }
+
+// =============================================================================
+// Concurrency Stress: Multi-Worker Slab Stealing & Recycling via Global Callbacks
+// =============================================================================
+
+TEST_CASE("Concurrency stress test: multi-worker slab stealing and recycling via global callbacks", "[stress][memory][concurrency]") {
+    const u32 workerThreads = std::max<u32>(4, static_cast<u32>(std::thread::hardware_concurrency()));
+    SchedulerConfig config{.workerCount = workerThreads, .initialDequeCapacity = 4096};
+    TaskScheduler scheduler(config);
+
+    constexpr usize PRODUCER_COUNT = 4;
+    constexpr usize TASKS_PER_PRODUCER = 5000; // 4 * 5,000 = 20,000 tasks
+    constexpr usize TOTAL_TASKS = PRODUCER_COUNT * TASKS_PER_PRODUCER;
+
+    std::atomic<usize> completedCount{0};
+    std::atomic<bool> startSignal{false};
+
+    std::vector<std::thread> producers;
+    producers.reserve(PRODUCER_COUNT);
+
+    std::vector<SlabArena> arenas;
+    arenas.reserve(PRODUCER_COUNT);
+    for (usize p = 0; p < PRODUCER_COUNT; ++p) {
+        arenas.emplace_back(BlockPool::global());
+    }
+
+    for (usize p = 0; p < PRODUCER_COUNT; ++p) {
+        producers.emplace_back([&, p]() {
+            while (!startSignal.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+            }
+
+            auto& arena = arenas[p];
+            for (usize i = 0; i < TASKS_PER_PRODUCER; ++i) {
+                TaskNode* node = arena.create<TaskNode>();
+                node->domain = TaskDomain::Worker;
+                node->priority = (i % 3 == 0) ? TaskPriority::High : TaskPriority::Normal;
+                node->initialInDegree = 0;
+                node->inDegree.store(0, std::memory_order_relaxed);
+                node->state.store(TaskState::Pending, std::memory_order_relaxed);
+
+                // Large capture (>48 bytes) to force dynamic allocation from arena / global pool
+                struct LargePayload {
+                    std::array<std::byte, 64> pad{};
+                    usize id{0};
+                };
+                LargePayload payload{.pad = {}, .id = i};
+
+                node->setCallable([&completedCount, payload]() noexcept {
+                    (void)payload.id;
+                    completedCount.fetch_add(1, std::memory_order_release);
+                }, &arena);
+
+                scheduler.schedule(node);
+            }
+        });
+    }
+
+    startSignal.store(true, std::memory_order_release);
+
+    for (auto& t : producers) {
+        t.join();
+    }
+
+    scheduler.helpUntil([&completedCount]() noexcept {
+        return completedCount.load(std::memory_order_acquire) == TOTAL_TASKS;
+    });
+
+    CHECK(completedCount.load(std::memory_order_acquire) == TOTAL_TASKS);
+}
+

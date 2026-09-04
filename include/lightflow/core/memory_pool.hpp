@@ -89,6 +89,20 @@ public:
     /// Returns the global default BlockPool instance.
     LF_NODISCARD static BlockPool& global() noexcept;
 
+    /// Configures the global MemoryCallbacks used when BlockPool::global() is initialized.
+    /// Must be called during engine bootstrap BEFORE BlockPool::global() is first accessed or allocated.
+    /// Asserts (LF_ASSERT) if called after BlockPool::global() has already been initialized.
+    static void set_global_callbacks(const MemoryCallbacks& callbacks) noexcept;
+
+    /// Returns the global MemoryCallbacks configured for the engine bootstrap.
+    LF_NODISCARD static const MemoryCallbacks& global_callbacks() noexcept;
+
+    /// Returns true if BlockPool::global() has already been initialized.
+    LF_NODISCARD static bool is_global_initialized() noexcept;
+
+    /// Testing-only helper to destruct BlockPool::global() and reset global bootstrap state.
+    static void reset_global_for_testing() noexcept;
+
     /// Creates a BlockPool backed by a pre-allocated static contiguous memory buffer.
     /// The buffer is partitioned into 64KB slabs aligned to 64KB. Dynamic growth is permanently disabled.
     /// Non-owning semantics: the buffer memory is never deallocated on pool destruction.

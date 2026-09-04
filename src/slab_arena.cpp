@@ -148,25 +148,42 @@ void* SlabArena::allocate_slow(usize bytes, usize alignment) noexcept {
 
     // Oversized or large alignment allocation
     usize total_bytes = bytes + sizeof(OversizedBlock) + alignment;
+    usize alloc_align = alignment > CACHELINE_SIZE ? alignment : CACHELINE_SIZE;
     void* raw_mem = nullptr;
+
+    if (m_pool != nullptr && m_pool->callbacks().is_valid()) {
+        raw_mem = m_pool->callbacks().alloc(total_bytes, alloc_align, m_pool->callbacks().user_data);
+    }
+#if !defined(LF_DISABLE_PLATFORM_ALLOCATOR)
+    else {
 #if defined(_WIN32)
-    raw_mem = _aligned_malloc(total_bytes, alignment > CACHELINE_SIZE ? alignment : CACHELINE_SIZE);
+        raw_mem = _aligned_malloc(total_bytes, alloc_align);
 #else
-    int res = ::posix_memalign(&raw_mem, alignment > CACHELINE_SIZE ? alignment : CACHELINE_SIZE, total_bytes);
-    if (res != 0) {
-        raw_mem = nullptr;
+        int res = ::posix_memalign(&raw_mem, alloc_align, total_bytes);
+        if (res != 0) {
+            raw_mem = nullptr;
+        }
+#endif
     }
 #endif
+
     if (raw_mem == nullptr) {
         return nullptr;
     }
 
-    auto* block = new (std::nothrow) OversizedBlock{raw_mem, m_oversized_head};
+    auto* block = new (std::nothrow) OversizedBlock{raw_mem, total_bytes, alloc_align, m_oversized_head};
     if (block == nullptr) {
+        if (m_pool != nullptr && m_pool->callbacks().is_valid()) {
+            m_pool->callbacks().free(raw_mem, total_bytes, alloc_align, m_pool->callbacks().user_data);
+        }
+#if !defined(LF_DISABLE_PLATFORM_ALLOCATOR)
+        else {
 #if defined(_WIN32)
-        _aligned_free(raw_mem);
+            _aligned_free(raw_mem);
 #else
-        ::free(raw_mem);
+            ::free(raw_mem);
+#endif
+        }
 #endif
         return nullptr;
     }
@@ -195,10 +212,17 @@ void SlabArena::reset() noexcept {
     OversizedBlock* curr = m_oversized_head;
     while (curr != nullptr) {
         OversizedBlock* next = curr->next;
+        if (m_pool != nullptr && m_pool->callbacks().is_valid()) {
+            m_pool->callbacks().free(curr->raw_ptr, curr->total_bytes, curr->alignment, m_pool->callbacks().user_data);
+        }
+#if !defined(LF_DISABLE_PLATFORM_ALLOCATOR)
+        else {
 #if defined(_WIN32)
-        _aligned_free(curr->raw_ptr);
+            _aligned_free(curr->raw_ptr);
 #else
-        ::free(curr->raw_ptr);
+            ::free(curr->raw_ptr);
+#endif
+        }
 #endif
         delete curr;
         curr = next;
