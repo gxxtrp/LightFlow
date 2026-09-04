@@ -5,6 +5,58 @@
 
 namespace lf {
 
+namespace {
+
+bool reaches(TaskNode* start, TaskNode* target) noexcept {
+    if (start == nullptr || target == nullptr) {
+        return false;
+    }
+    if (start == target) {
+        return true;
+    }
+    constexpr usize MAX_VISITED = 128;
+    TaskNode* visited[MAX_VISITED]{};
+    usize visitedCount = 0;
+
+    TaskNode* queue[MAX_VISITED]{};
+    usize head = 0;
+    usize tail = 0;
+    queue[tail++] = start;
+    visited[visitedCount++] = start;
+
+    while (head < tail) {
+        TaskNode* curr = queue[head++];
+        if (curr == target) {
+            return true;
+        }
+        for (SuccessorEdge* e = curr->successors; e != nullptr; e = e->next) {
+            TaskNode* succ = e->target;
+            if (succ == target) {
+                return true;
+            }
+            if (succ != nullptr) {
+                bool alreadyVisited = false;
+                for (usize i = 0; i < visitedCount; ++i) {
+                    if (visited[i] == succ) {
+                        alreadyVisited = true;
+                        break;
+                    }
+                }
+                if (!alreadyVisited) {
+                    LF_ASSERT(tail < MAX_VISITED && visitedCount < MAX_VISITED);
+                    if (tail < MAX_VISITED && visitedCount < MAX_VISITED) {
+                        visited[visitedCount++] = succ;
+                        queue[tail++] = succ;
+                    }
+                }
+            }
+        }
+    }
+    return false;
+}
+
+} // anonymous namespace
+
 // =============================================================================
 // TaskNode Execution & Unblocking
 // =============================================================================
@@ -30,34 +82,146 @@ void TaskNode::execute() noexcept {
 void TaskNode::unblockSuccessors() noexcept {
     if (type == TaskType::Condition) {
         int chosenBranch = static_cast<int>(reinterpret_cast<intptr_t>(userData));
+
+        // Check if the chosen branch is a loop-back edge
+        SuccessorEdge* chosenLoopEdge = nullptr;
+        for (SuccessorEdge* edge = successors; edge != nullptr; edge = edge->next) {
+            if ((edge->branch == -1 || edge->branch == chosenBranch) && edge->isLoopBack) {
+                chosenLoopEdge = edge;
+                break;
+            }
+        }
+
+        if (chosenLoopEdge != nullptr) {
+            TaskNode* target = chosenLoopEdge->target;
+
+            // Collect all nodes participating in the cycle from target to this
+            constexpr usize MAX_CYCLE = 64;
+            TaskNode* cycleNodes[MAX_CYCLE]{};
+            usize cycleCount = 0;
+
+            if (target == this) {
+                cycleNodes[cycleCount++] = this;
+            } else {
+                TaskNode* queue[MAX_CYCLE]{};
+                usize head = 0;
+                usize tail = 0;
+                queue[tail++] = target;
+                cycleNodes[cycleCount++] = target;
+
+                while (head < tail) {
+                    TaskNode* curr = queue[head++];
+                    for (SuccessorEdge* e = curr->successors; e != nullptr; e = e->next) {
+                        TaskNode* succ = e->target;
+                        if (succ != nullptr && !e->isLoopBack && reaches(succ, this)) {
+                            bool visited = false;
+                            for (usize i = 0; i < cycleCount; ++i) {
+                                if (cycleNodes[i] == succ) {
+                                    visited = true;
+                                    break;
+                                }
+                            }
+                            if (!visited) {
+                                LF_ASSERT(tail < MAX_CYCLE && cycleCount < MAX_CYCLE);
+                                if (tail < MAX_CYCLE && cycleCount < MAX_CYCLE) {
+                                    cycleNodes[cycleCount++] = succ;
+                                    queue[tail++] = succ;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Reset inDegrees and pending state for cycle nodes
+            for (usize i = 0; i < cycleCount; ++i) {
+                TaskNode* n = cycleNodes[i];
+                if (n != target) {
+                    n->inDegree.store(n->initialInDegree, std::memory_order_relaxed);
+                }
+                n->state.store(TaskState::Pending, std::memory_order_relaxed);
+            }
+
+            if (graph != nullptr) {
+                graph->addPendingTasks(static_cast<u32>(cycleCount));
+                graph->scheduleNode(target);
+            }
+        } else {
+            SuccessorEdge* edge = successors;
+            u32 unblockedCount = 0;
+            while (edge != nullptr) {
+                TaskNode* succ = edge->target;
+                if (succ != nullptr) {
+                    if (edge->branch == -1 || edge->branch == chosenBranch) {
+                        if (succ->decrementActive()) {
+                            if (t_canInlineTask && t_nextInlineTask == nullptr && succ->domain == TaskDomain::Worker) {
+                                t_nextInlineTask = succ;
+                            } else if (graph != nullptr) {
+                                graph->scheduleNode(succ, /*notify=*/false);
+                                if (succ->domain == TaskDomain::Worker) {
+                                    unblockedCount++;
+                                    if (unblockedCount >= 64) {
+                                        if (graph->scheduler() != nullptr) {
+                                            graph->scheduler()->notifyWorker(unblockedCount);
+                                        }
+                                        unblockedCount = 0;
+                                    }
+                                }
+                            }
+                        }
+                    } else if (!edge->isLoopBack) {
+                        succ->decrementSkipped(graph);
+                    }
+                }
+                edge = edge->next;
+            }
+            if (unblockedCount > 0 && graph != nullptr && graph->scheduler() != nullptr) {
+                graph->scheduler()->notifyWorker(unblockedCount);
+            }
+        }
+    } else {
         SuccessorEdge* edge = successors;
+        u32 unblockedCount = 0;
         while (edge != nullptr) {
             TaskNode* succ = edge->target;
             if (succ != nullptr) {
-                if (edge->branch == -1 || edge->branch == chosenBranch) {
-                    succ->decrementActive(graph);
-                } else {
-                    succ->decrementSkipped(graph);
+                if (succ->decrementActive()) {
+                    if (t_canInlineTask && t_nextInlineTask == nullptr && succ->domain == TaskDomain::Worker) {
+                        t_nextInlineTask = succ;
+                    } else if (graph != nullptr) {
+                        graph->scheduleNode(succ, /*notify=*/false);
+                        if (succ->domain == TaskDomain::Worker) {
+                            unblockedCount++;
+                            if (unblockedCount >= 64) {
+                                if (graph->scheduler() != nullptr) {
+                                    graph->scheduler()->notifyWorker(unblockedCount);
+                                }
+                                unblockedCount = 0;
+                            }
+                        }
+                    }
                 }
             }
             edge = edge->next;
         }
-    } else {
-        SuccessorEdge* edge = successors;
-        while (edge != nullptr) {
-            TaskNode* succ = edge->target;
-            if (succ != nullptr) {
-                succ->decrementActive(graph);
-            }
-            edge = edge->next;
+        if (unblockedCount > 0 && graph != nullptr && graph->scheduler() != nullptr) {
+            graph->scheduler()->notifyWorker(unblockedCount);
         }
     }
 }
 
-void TaskNode::decrementActive(TaskGraph* g) noexcept {
-    u32 prev = inDegree.fetch_add(0x0000FFFFu, std::memory_order_acq_rel);
+bool TaskNode::decrementActive() noexcept {
+    u32 prev = inDegree.fetch_add(0x0000FFFFu, std::memory_order_release);
     u16 prevLower = static_cast<u16>(prev & 0xFFFFu);
     if (prevLower == 1) {
+        std::atomic_thread_fence(std::memory_order_acquire);
+        return true;
+    }
+    return false;
+}
+
+void TaskNode::decrementActive(TaskGraph* g) noexcept {
+    if (decrementActive()) {
         if (g != nullptr) {
             g->scheduleNode(this);
         }
@@ -65,9 +229,10 @@ void TaskNode::decrementActive(TaskGraph* g) noexcept {
 }
 
 void TaskNode::decrementSkipped(TaskGraph* g) noexcept {
-    u32 prev = inDegree.fetch_sub(1u, std::memory_order_acq_rel);
+    u32 prev = inDegree.fetch_sub(1u, std::memory_order_release);
     u16 prevLower = static_cast<u16>(prev & 0xFFFFu);
     if (prevLower == 1) {
+        std::atomic_thread_fence(std::memory_order_acquire);
         u32 newVal = prev - 1u;
         u16 upper = static_cast<u16>(newVal >> 16);
         if (upper > 0) {
@@ -147,8 +312,13 @@ void TaskGraph::addEdge(TaskNode* from, TaskNode* to, int branch) noexcept {
     edge->next = from->successors;
     from->successors = edge;
 
-    to->initialInDegree++;
-    to->inDegree.store(to->initialInDegree, std::memory_order_relaxed);
+    bool isLoop = (from->type == TaskType::Condition || branch >= 0) && reaches(to, from);
+    edge->isLoopBack = isLoop;
+
+    if (!isLoop) {
+        to->initialInDegree++;
+        to->inDegree.store(to->initialInDegree, std::memory_order_relaxed);
+    }
 }
 
 void TaskGraph::addWaitPoint(TaskNode* node, const TimelineSyncPoint& syncPoint) noexcept {
@@ -209,17 +379,28 @@ void TaskGraph::prepareRun(TaskScheduler& scheduler) noexcept {
 
     // Step 3: Schedule all root tasks (initialInDegree == 0)
     curr = m_firstNode;
+    u32 rootWorkerCount = 0;
     while (curr != nullptr) {
         if (curr->initialInDegree == 0) {
-            scheduler.schedule(curr);
+            scheduler.schedule(curr, /*notify=*/false);
+            if (curr->domain == TaskDomain::Worker) {
+                rootWorkerCount++;
+                if (rootWorkerCount >= 64) {
+                    scheduler.notifyWorker(rootWorkerCount);
+                    rootWorkerCount = 0;
+                }
+            }
         }
         curr = curr->nextInGraph;
     }
+    if (rootWorkerCount > 0) {
+        scheduler.notifyWorker(rootWorkerCount);
+    }
 }
 
-void TaskGraph::scheduleNode(TaskNode* node) noexcept {
+void TaskGraph::scheduleNode(TaskNode* node, bool notify) noexcept {
     if (m_scheduler != nullptr && node != nullptr) {
-        m_scheduler->schedule(node);
+        m_scheduler->schedule(node, notify);
     }
 }
 

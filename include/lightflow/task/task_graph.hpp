@@ -511,11 +511,15 @@ public:
     LF_NODISCARD TaskScheduler* scheduler() const noexcept { return m_scheduler; }
 
     /// Internal scheduler notification entry points:
-    void scheduleNode(TaskNode* node) noexcept;
+    void scheduleNode(TaskNode* node, bool notify = true) noexcept;
     void onTaskCompleted(TaskNode* node) noexcept;
+    void addPendingTasks(u32 count) noexcept {
+        m_pendingTasks.fetch_add(count, std::memory_order_release);
+    }
 
 private:
     friend class Subflow;
+    friend struct TaskNode;
 
     void appendNode(TaskNode* node) noexcept;
 

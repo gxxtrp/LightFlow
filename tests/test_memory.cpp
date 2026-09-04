@@ -1281,4 +1281,75 @@ TEST_CASE("Doc Recipe: Subsystem Memory Telemetry and Budget Enforcement", "[mem
     REQUIRE(tracker.peak_bytes.load() == BUDGET_BYTES);
 }
 
+TEST_CASE("SlabArena lifecycle, oversized allocation, and PMR resource", "[memory][arena][coverage]") {
+    using namespace lf;
+
+    alignas(SLAB_SIZE) std::array<std::byte, SLAB_SIZE * 8> buffer{};
+    BlockPool pool = BlockPool::from_buffer(buffer.data(), buffer.size());
+
+    SECTION("SlabArena zero size and valid alignment allocation") {
+        SlabArena arena(pool);
+        REQUIRE(arena.allocate(0) == nullptr);
+        void* p = arena.allocate(16, 16);
+        REQUIRE(p != nullptr);
+        arena.deallocate(p, 16, 16);
+        REQUIRE(arena.total_allocated_bytes() > 0);
+    }
+
+    SECTION("SlabArena move constructor and move assignment") {
+        SlabArena arena1(pool);
+        void* p1 = arena1.allocate(128, 16);
+        REQUIRE(p1 != nullptr);
+        usize bytes1 = arena1.total_allocated_bytes();
+        usize slabs1 = arena1.slab_count();
+
+        // Move construct
+        SlabArena arena2(std::move(arena1));
+        REQUIRE(arena2.total_allocated_bytes() == bytes1);
+        REQUIRE(arena2.slab_count() == slabs1);
+
+        // Move assign
+        SlabArena arena3(pool);
+        arena3 = std::move(arena2);
+        REQUIRE(arena3.total_allocated_bytes() == bytes1);
+        REQUIRE(arena3.slab_count() == slabs1);
+    }
+
+    SECTION("SlabArena oversized allocation via MemoryCallbacks") {
+        CustomTrackingAllocator tracker{};
+        MemoryCallbacks callbacks{
+            .alloc = &test_custom_alloc,
+            .free = &test_custom_free,
+            .user_data = &tracker
+        };
+        BlockPool dynamicPool(callbacks, 2, 2);
+        SlabArena arena(dynamicPool);
+
+        constexpr usize OVERSIZED = SLAB_SIZE * 2;
+        void* ptr = arena.allocate(OVERSIZED, 64);
+        REQUIRE(ptr != nullptr);
+        REQUIRE(reinterpret_cast<uintptr_t>(ptr) % 64 == 0);
+        REQUIRE(arena.total_allocated_bytes() >= OVERSIZED);
+        REQUIRE(tracker.alloc_calls > 1);
+
+        arena.reset();
+        REQUIRE(arena.total_allocated_bytes() == 0);
+    }
+
+    SECTION("SlabMemoryResource PMR integration") {
+        SlabArena arena(pool);
+        std::pmr::memory_resource* res = arena.resource();
+        REQUIRE(res != nullptr);
+
+        void* p = res->allocate(64, 16);
+        REQUIRE(p != nullptr);
+        res->deallocate(p, 64, 16);
+
+        REQUIRE(res->is_equal(*res));
+
+        SlabArena otherArena(pool);
+        REQUIRE_FALSE(res->is_equal(*otherArena.resource()));
+    }
+}
+
 

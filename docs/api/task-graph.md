@@ -11,7 +11,11 @@ Traditional task graphs require traversing and resetting every node pointer befo
 * **`initialInDegree`**: Computed once during graph construction (number of incoming dependency edges).
 * **`inDegree` (`std::atomic<u32>`)**: Decremented atomically by predecessors as they complete execution.
 
-When a predecessor finishes, it decrements each successor's `inDegree` via `fetch_sub(1, std::memory_order_acq_rel)`. The thread that observes the counter reach `0` is guaranteed to have unblocked the task and pushes it directly into its local Chase-Lev deque.
+When a predecessor finishes, it decrements each successor's `inDegree` using a **split-barrier atomic pattern**: `inDegree.fetch_add(0x0000FFFFu, std::memory_order_release)`. Only the single winning thread that observes the counter reach 0 (`prevLower == 1`) issues a thread fence (`std::atomic_thread_fence(std::memory_order_acquire)`). This eliminates bidirectional memory barrier overhead for all non-winning predecessor threads.
+
+The winning thread then unblocks the task:
+1. If the thread is a worker executing tasks and its inline slot is vacant, it stages the task directly into [`t_nextInlineTask`](scheduler.md#2-thread-local-single-slot-inline-continuation) for instant, deque-free cache-warm execution.
+2. Otherwise, the task is scheduled into the local Chase-Lev deque or domain queue, with wake notifications coalesced every 64 tasks.
 
 To reset the graph for the next frame, [`clear()`](#taskgraphclear) or [`prepareRun()`](#taskgraphpreparerun) simply copies `initialInDegree` back into `inDegree` in a single flat loop. **Reset is an instantaneous $O(N)$ memory write with zero pointer chasing and zero heap allocations.**
 
