@@ -2,7 +2,7 @@
 
 [![C++23](https://img.shields.io/badge/C%2B%2B-23-blue.svg)](https://en.cppreference.com/w/cpp/23)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Build & Tests](https://img.shields.io/badge/Tests-29%2F29%20Passing-brightgreen.svg)]()
+[![Build & Tests](https://img.shields.io/badge/Tests-41%2F41%20Passing-brightgreen.svg)]()
 [![Zero Heap Allocations](https://img.shields.io/badge/Steady--State%20Mallocs-0-blueviolet.svg)]()
 [![Max Speedup](https://img.shields.io/badge/Peak%20Speedup-10.22x-orange.svg)]()
 
@@ -147,12 +147,17 @@ To view the live trace on macOS:
 #include <iostream>
 
 int main() {
-    // 1. Initialize persistent scheduler (owns worker pool and thread deques)
+    // 1. In default builds (LF_DISABLE_PLATFORM_ALLOCATOR=ON), allocate from a pre-allocated
+    // buffer or register engine hooks via BlockPool::set_global_callbacks().
+    alignas(lf::SLAB_SIZE) static std::byte memory[16 * 1024 * 1024]; // 16 MB buffer
+    auto pool = lf::BlockPool::from_buffer(memory, sizeof(memory));
+
+    // 2. Initialize persistent scheduler (owns worker pool and thread deques)
     lf::SchedulerConfig config{.workerCount = 8};
     lf::TaskScheduler scheduler(config);
 
-    // 2. Build graph using monotonic bump allocator
-    lf::TaskGraph graph;
+    // 3. Build graph using monotonic bump allocator backed by pool
+    lf::TaskGraph graph(&pool);
     
     auto t1 = graph.emplace("InitResources", []() noexcept {
         std::cout << "Step 1: Resources initialized\n";
@@ -170,7 +175,7 @@ int main() {
     t1.precede(t2);
     t2.precede(t3);
 
-    // 3. Execute graph (zero heap allocations)
+    // 4. Execute graph (zero heap allocations)
     scheduler.runAndWait(graph);
 
     return 0;
@@ -335,8 +340,9 @@ set(LF_ENABLE_VULKAN_HELPERS ON CACHE BOOL "" FORCE)
 # Build tests and comparison suites
 set(LF_BUILD_TESTS ON CACHE BOOL "" FORCE)
 
-# Platform virtual memory is disabled by default (LF_DISABLE_PLATFORM_ALLOCATOR=ON)
-# to enforce total host engine memory ownership and zero libc allocations.
+# Platform allocator (posix_memalign / _aligned_malloc) is disabled by default
+# across all builds (LF_DISABLE_PLATFORM_ALLOCATOR=ON) to guarantee zero hidden
+# virtual memory calls and complete host engine memory ownership.
 # To opt into host platform virtual memory for standalone desktop CLI tools:
 # set(LF_DISABLE_PLATFORM_ALLOCATOR OFF CACHE BOOL "" FORCE)
 ```

@@ -21,11 +21,63 @@
 #include <thread>
 #include <vector>
 
+#if defined(_WIN32)
+    #define WIN32_LEAN_AND_MEAN
+    #define NOMINMAX
+    #include <windows.h>
+#else
+    #include <sys/mman.h>
+    #include <unistd.h>
+#endif
+
 // =============================================================================
 // Global Heap Allocation Tracker
 // =============================================================================
 
 namespace lf::bench {
+
+inline void* bench_alloc(lf::usize bytes, lf::usize alignment, void* /*user_data*/) noexcept {
+#if defined(_WIN32)
+    (void)alignment;
+    return ::VirtualAlloc(nullptr, bytes, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+#else
+    #if !defined(MAP_ANONYMOUS) && defined(MAP_ANON)
+        #define MAP_ANONYMOUS MAP_ANON
+    #endif
+    const long sys_page = ::sysconf(_SC_PAGESIZE);
+    const lf::usize page_size = (sys_page > 0) ? static_cast<lf::usize>(sys_page) : 4096;
+    if (alignment <= page_size) {
+        void* ptr = ::mmap(nullptr, bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        return (ptr == MAP_FAILED) ? nullptr : ptr;
+    }
+    const lf::usize total_reserve = bytes + alignment;
+    void* raw = ::mmap(nullptr, total_reserve, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (raw == MAP_FAILED) {
+        return nullptr;
+    }
+    const auto raw_addr = reinterpret_cast<std::uintptr_t>(raw);
+    const auto aligned_addr = (raw_addr + alignment - 1) & ~(alignment - 1);
+    const lf::usize prefix = aligned_addr - raw_addr;
+    const lf::usize suffix = total_reserve - prefix - bytes;
+    if (prefix > 0) {
+        ::munmap(raw, prefix);
+    }
+    if (suffix > 0) {
+        ::munmap(reinterpret_cast<void*>(aligned_addr + bytes), suffix);
+    }
+    return reinterpret_cast<void*>(aligned_addr);
+#endif
+}
+
+inline void bench_free(void* ptr, lf::usize bytes, lf::usize /*alignment*/, void* /*user_data*/) noexcept {
+    if (ptr == nullptr) return;
+#if defined(_WIN32)
+    (void)bytes;
+    ::VirtualFree(ptr, 0, MEM_RELEASE);
+#else
+    ::munmap(ptr, bytes);
+#endif
+}
 
 struct AllocationTracker {
     static inline std::atomic<bool> s_active{false};
@@ -1071,6 +1123,13 @@ void writeJsonResults(const std::string& outputPath, const std::vector<SweepResu
 
 int main(int argc, char* argv[]) {
     using namespace lf::bench;
+
+    lf::MemoryCallbacks benchCallbacks{
+        .alloc = &bench_alloc,
+        .free = &bench_free,
+        .user_data = nullptr
+    };
+    lf::BlockPool::set_global_callbacks(benchCallbacks);
 
     std::string outputPath = "docs/benchmarks/results.json";
     bool quick = false;

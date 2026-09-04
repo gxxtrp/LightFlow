@@ -21,7 +21,7 @@ option(LF_ENABLE_TRACY "Enable Tracy profiler instrumentation" OFF)
 option(LF_ENABLE_VULKAN_HELPERS "Enable Vulkan 1.3 Synchronization2 helpers" ON)
 option(LF_ENABLE_ASAN "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 option(LF_ENABLE_TSAN "Enable ThreadSanitizer" OFF)
-option(LF_DISABLE_PLATFORM_ALLOCATOR "Disable libc virtual memory allocator (enforces strict engine memory discipline)" ON)
+option(LF_DISABLE_PLATFORM_ALLOCATOR "Disable libc platform allocator (posix_memalign / _aligned_malloc)" ON)
 
 # Sanitizer Configuration
 if(LF_ENABLE_ASAN AND LF_ENABLE_TSAN)

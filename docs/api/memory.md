@@ -108,7 +108,7 @@ namespace lf {
 
 * **POSIX (Linux, macOS, BSD)**: Allocates via `posix_memalign` and deallocates via `free`.
 * **Windows (MSVC, Clang-cl)**: Allocates via `_aligned_malloc` and deallocates via `_aligned_free`.
-* **Unified Pipeline**: Under the default configuration (`LF_DISABLE_PLATFORM_ALLOCATOR=ON`), platform memory is physically compiled out of the binary to guarantee complete host engine memory ownership. When opted into (`LF_DISABLE_PLATFORM_ALLOCATOR=OFF`), `platform_memory_callbacks()` serves as an explicit, traceable platform adapter rather than an invisible backdoor.
+* **Unified Pipeline**: By default (`LF_DISABLE_PLATFORM_ALLOCATOR=ON`), platform memory allocators are physically compiled out of the binary across all build configurations (`release`, `debug`, `profile`, `asan`, `tsan`). When explicitly opted into (`LF_DISABLE_PLATFORM_ALLOCATOR=OFF`), `platform_memory_callbacks()` serves as an explicit, traceable platform adapter rather than an invisible backdoor.
 
 ---
 
@@ -218,22 +218,22 @@ LightFlow adheres to a strict fail-fast memory policy:
 
 ---
 
-## Strict Platform Allocator Isolation (`LF_DISABLE_PLATFORM_ALLOCATOR`)
+## Platform Memory Configuration (`LF_DISABLE_PLATFORM_ALLOCATOR`)
 
-By default, LightFlow enforces strict memory discipline and allocator isolation across all build configurations (`LF_DISABLE_PLATFORM_ALLOCATOR=ON`). This guarantees zero hidden platform virtual memory calls (`posix_memalign`, `_aligned_malloc`) and total memory ownership by the host engine. There is no separate "sandbox build"—all standard builds enforce this discipline out of the box.
+LightFlow does not use a separate "sandbox build"—all build presets (`release`, `debug`, `profile`, `asan`, `tsan`) enforce pluggable memory discipline by default (`LF_DISABLE_PLATFORM_ALLOCATOR=ON`). This guarantees zero hidden libc virtual memory calls (`posix_memalign`, `_aligned_malloc`) and total memory ownership by the host engine.
 
 ```cmake
-# Enabled by default on all builds:
-option(LF_DISABLE_PLATFORM_ALLOCATOR "Disable libc virtual memory allocator (enforces strict engine memory discipline)" ON)
+# Enabled by default across all configurations:
+option(LF_DISABLE_PLATFORM_ALLOCATOR "Disable libc platform allocator (posix_memalign / _aligned_malloc)" ON)
 
-# To opt into host platform virtual memory for standalone desktop CLI tools:
+# To opt into libc platform virtual memory for standalone desktop CLI tools:
 set(LF_DISABLE_PLATFORM_ALLOCATOR OFF CACHE BOOL "" FORCE)
 ```
 
-In the default configuration:
+In default mode (`LF_DISABLE_PLATFORM_ALLOCATOR=ON`):
 * The symbols `posix_memalign`, `_aligned_malloc`, and `platform_memory_callbacks()` are **physically compiled out of the binary**.
 * Default `BlockPool` instances inherit the globally configured engine callbacks (`BlockPool::global_callbacks()`).
-* The application **must** explicitly configure custom callbacks (`BlockPool::set_global_callbacks` or `BlockPool(callbacks)`) or use static buffers (`BlockPool::from_buffer`).
+* The host application **must** explicitly configure custom callbacks (`BlockPool::set_global_callbacks` or `BlockPool(callbacks)`) or use static buffers (`BlockPool::from_buffer`).
 * If accessed without valid callbacks, `BlockPool` fails fast (`LF_ASSERT`) immediately with zero silent fallbacks.
 
 ---
