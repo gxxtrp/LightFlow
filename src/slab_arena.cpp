@@ -171,22 +171,11 @@ void* SlabArena::allocate_slow(usize bytes, usize alignment) noexcept {
         return nullptr;
     }
 
-    auto* block = new (std::nothrow) OversizedBlock{raw_mem, total_bytes, alloc_align, m_oversized_head};
-    if (block == nullptr) {
-        if (m_pool != nullptr && m_pool->callbacks().is_valid()) {
-            m_pool->callbacks().free(raw_mem, total_bytes, alloc_align, m_pool->callbacks().user_data);
-        }
-#if !defined(LF_DISABLE_PLATFORM_ALLOCATOR)
-        else {
-#if defined(_WIN32)
-            _aligned_free(raw_mem);
-#else
-            ::free(raw_mem);
-#endif
-        }
-#endif
-        return nullptr;
-    }
+    auto* block = reinterpret_cast<OversizedBlock*>(raw_mem);
+    block->raw_ptr = raw_mem;
+    block->total_bytes = total_bytes;
+    block->alignment = alloc_align;
+    block->next = m_oversized_head;
 
     m_oversized_head = block;
     m_allocated_bytes += bytes;
@@ -212,19 +201,22 @@ void SlabArena::reset() noexcept {
     OversizedBlock* curr = m_oversized_head;
     while (curr != nullptr) {
         OversizedBlock* next = curr->next;
+        void* raw_ptr = curr->raw_ptr;
+        usize total_bytes = curr->total_bytes;
+        usize alignment = curr->alignment;
+
         if (m_pool != nullptr && m_pool->callbacks().is_valid()) {
-            m_pool->callbacks().free(curr->raw_ptr, curr->total_bytes, curr->alignment, m_pool->callbacks().user_data);
+            m_pool->callbacks().free(raw_ptr, total_bytes, alignment, m_pool->callbacks().user_data);
         }
 #if !defined(LF_DISABLE_PLATFORM_ALLOCATOR)
         else {
 #if defined(_WIN32)
-            _aligned_free(curr->raw_ptr);
+            _aligned_free(raw_ptr);
 #else
-            ::free(curr->raw_ptr);
+            ::free(raw_ptr);
 #endif
         }
 #endif
-        delete curr;
         curr = next;
     }
     m_oversized_head = nullptr;

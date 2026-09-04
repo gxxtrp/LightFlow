@@ -60,6 +60,20 @@ BlockPool::BlockPool(usize initial_slabs, usize chunk_slabs, bool allow_growth) 
     : BlockPool(MemoryCallbacks{}, initial_slabs, chunk_slabs, allow_growth) {}
 #endif
 
+namespace {
+
+void partition_slab_chain(std::byte* base, usize count) noexcept {
+    for (usize i = 0; i < count; ++i) {
+        auto* current = reinterpret_cast<Slab*>(base + (i * SLAB_SIZE));
+        auto* next = (i + 1 < count)
+            ? reinterpret_cast<Slab*>(base + ((i + 1) * SLAB_SIZE))
+            : nullptr;
+        current->next.store(next, std::memory_order_relaxed);
+    }
+}
+
+} // anonymous namespace
+
 BlockPool::BlockPool(const MemoryCallbacks& callbacks,
                      usize initial_slabs,
                      usize chunk_slabs,
@@ -88,13 +102,7 @@ BlockPool::BlockPool(const MemoryCallbacks& callbacks,
             m_chunks.store(chunk, std::memory_order_relaxed);
 
             auto* base_bytes = static_cast<std::byte*>(raw_mem);
-            for (usize i = 0; i < initial_slabs; ++i) {
-                auto* current = reinterpret_cast<Slab*>(base_bytes + (i * SLAB_SIZE));
-                auto* next = (i + 1 < initial_slabs)
-                    ? reinterpret_cast<Slab*>(base_bytes + ((i + 1) * SLAB_SIZE))
-                    : nullptr;
-                current->next.store(next, std::memory_order_relaxed);
-            }
+            partition_slab_chain(base_bytes, initial_slabs);
 
             auto* first_slab = reinterpret_cast<Slab*>(base_bytes);
             m_head.store(TaggedSlab{first_slab, 0}, std::memory_order_release);
@@ -134,13 +142,7 @@ BlockPool::BlockPool(void* buffer, usize bytes) noexcept
 
     void* aligned_ptr = reinterpret_cast<void*>(aligned_addr);
     auto* base_bytes = static_cast<std::byte*>(aligned_ptr);
-    for (usize i = 0; i < slab_count; ++i) {
-        auto* current = reinterpret_cast<Slab*>(base_bytes + (i * SLAB_SIZE));
-        auto* next = (i + 1 < slab_count)
-            ? reinterpret_cast<Slab*>(base_bytes + ((i + 1) * SLAB_SIZE))
-            : nullptr;
-        current->next.store(next, std::memory_order_relaxed);
-    }
+    partition_slab_chain(base_bytes, slab_count);
 
     auto* chunk = new (std::nothrow) Chunk{
         .base_ptr = aligned_ptr,
@@ -304,13 +306,7 @@ Slab* BlockPool::allocate_chunk_and_acquire() noexcept {
     if (count > 1) {
         usize rest_count = count - 1;
         auto* rest_base = base_bytes + SLAB_SIZE;
-        for (usize i = 0; i < rest_count; ++i) {
-            auto* curr = reinterpret_cast<Slab*>(rest_base + (i * SLAB_SIZE));
-            auto* nxt = (i + 1 < rest_count)
-                ? reinterpret_cast<Slab*>(rest_base + ((i + 1) * SLAB_SIZE))
-                : nullptr;
-            curr->next.store(nxt, std::memory_order_relaxed);
-        }
+        partition_slab_chain(rest_base, rest_count);
 
         auto* head_rest = reinterpret_cast<Slab*>(rest_base);
         auto* tail_rest = reinterpret_cast<Slab*>(rest_base + ((rest_count - 1) * SLAB_SIZE));
