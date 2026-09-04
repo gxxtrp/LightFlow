@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 520" width="900" height="520" style="background-color: #0B0F19; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+<defs>
+<linearGradient id="speedupArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#00E676" stop-opacity="0.35"/><stop offset="100%" stop-color="#00E676" stop-opacity="0.0"/></linearGradient>
+</defs>
+<text x="80" y="35" fill="#F3F4F6" font-size="18" font-weight="700">Wavefront Task Graph: LightFlow Speedup vs Classic</text>
+<text x="80" y="52" fill="#9CA3AF" font-size="12">LightFlow Speedup Multiplier vs Classic ThreadPool — Higher is Better</text>
+<line x1="80" y1="417.5" x2="860" y2="417.5" stroke="#FF4757" stroke-width="1.5" stroke-dasharray="6,6"/>
+<text x="865" y="421.5" fill="#FF4757" font-size="11">1.00x Baseline</text>
+<line x1="80" y1="450.0" x2="860" y2="450.0" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="70" y="454.0" fill="#9CA3AF" font-size="11" text-anchor="end">0.0x</text>
+<line x1="80" y1="385.0" x2="860" y2="385.0" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="70" y="389.0" fill="#9CA3AF" font-size="11" text-anchor="end">2.0x</text>
+<line x1="80" y1="320.0" x2="860" y2="320.0" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="70" y="324.0" fill="#9CA3AF" font-size="11" text-anchor="end">4.0x</text>
+<line x1="80" y1="255.0" x2="860" y2="255.0" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="70" y="259.0" fill="#9CA3AF" font-size="11" text-anchor="end">6.0x</text>
+<line x1="80" y1="190.0" x2="860" y2="190.0" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="70" y="194.0" fill="#9CA3AF" font-size="11" text-anchor="end">8.0x</text>
+<line x1="80" y1="125.0" x2="860" y2="125.0" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="70" y="129.0" fill="#9CA3AF" font-size="11" text-anchor="end">10.0x</text>
+<line x1="80" y1="60.0" x2="860" y2="60.0" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="70" y="64.0" fill="#9CA3AF" font-size="11" text-anchor="end">12.0x</text>
+<line x1="80.0" y1="60" x2="80.0" y2="450" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="80.0" y="470" fill="#9CA3AF" font-size="11" text-anchor="middle">100</text>
+<line x1="236.0" y1="60" x2="236.0" y2="450" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="236.0" y="470" fill="#9CA3AF" font-size="11" text-anchor="middle">1K</text>
+<line x1="392.0" y1="60" x2="392.0" y2="450" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="392.0" y="470" fill="#9CA3AF" font-size="11" text-anchor="middle">10K</text>
+<line x1="501.0393206764189" y1="60" x2="501.0393206764189" y2="450" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="501.0393206764189" y="470" fill="#9CA3AF" font-size="11" text-anchor="middle">50K</text>
+<line x1="548.0" y1="60" x2="548.0" y2="450" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="548.0" y="470" fill="#9CA3AF" font-size="11" text-anchor="middle">100K</text>
+<line x1="657.0393206764189" y1="60" x2="657.0393206764189" y2="450" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="657.0393206764189" y="470" fill="#9CA3AF" font-size="11" text-anchor="middle">500K</text>
+<line x1="704.0" y1="60" x2="704.0" y2="450" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="704.0" y="470" fill="#9CA3AF" font-size="11" text-anchor="middle">1M</text>
+<line x1="813.0393206764189" y1="60" x2="813.0393206764189" y2="450" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="813.0393206764189" y="470" fill="#9CA3AF" font-size="11" text-anchor="middle">5M</text>
+<line x1="860.0" y1="60" x2="860.0" y2="450" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="860.0" y="470" fill="#9CA3AF" font-size="11" text-anchor="middle">10M</text>
+<path d="M 80.0 450.0 L 80.0 406.9 L 236.0 413.5 L 392.0 387.2 L 501.0 346.4 L 548.0 338.4 L 657.0 233.1 L 704.0 192.4 L 813.0 175.2 L 860.0 137.9 L 860.0 450.0 Z" fill="url(#speedupArea)"/>
+<path d="M 80.0 406.9 L 236.0 413.5 L 392.0 387.2 L 501.0 346.4 L 548.0 338.4 L 657.0 233.1 L 704.0 192.4 L 813.0 175.2 L 860.0 137.9" fill="none" stroke="#00E676" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="80.0" cy="406.9" r="5" fill="#0B0F19" stroke="#00E676" stroke-width="2"/>
+<text x="80.0" y="396.9" fill="#00E676" font-size="11" font-weight="700" text-anchor="middle">1.33x</text>
+<circle cx="236.0" cy="413.5" r="5" fill="#0B0F19" stroke="#00E676" stroke-width="2"/>
+<text x="236.0" y="403.5" fill="#00E676" font-size="11" font-weight="700" text-anchor="middle">1.12x</text>
+<circle cx="392.0" cy="387.2" r="5" fill="#0B0F19" stroke="#00E676" stroke-width="2"/>
+<text x="392.0" y="377.2" fill="#00E676" font-size="11" font-weight="700" text-anchor="middle">1.93x</text>
+<circle cx="501.0" cy="346.4" r="5" fill="#0B0F19" stroke="#00E676" stroke-width="2"/>
+<text x="501.0" y="336.4" fill="#00E676" font-size="11" font-weight="700" text-anchor="middle">3.19x</text>
+<circle cx="548.0" cy="338.4" r="5" fill="#0B0F19" stroke="#00E676" stroke-width="2"/>
+<text x="548.0" y="328.4" fill="#00E676" font-size="11" font-weight="700" text-anchor="middle">3.44x</text>
+<circle cx="657.0" cy="233.1" r="5" fill="#0B0F19" stroke="#00E676" stroke-width="2"/>
+<text x="657.0" y="223.1" fill="#00E676" font-size="11" font-weight="700" text-anchor="middle">6.67x</text>
+<circle cx="704.0" cy="192.4" r="5" fill="#0B0F19" stroke="#00E676" stroke-width="2"/>
+<text x="704.0" y="182.4" fill="#00E676" font-size="11" font-weight="700" text-anchor="middle">7.92x</text>
+<circle cx="813.0" cy="175.2" r="5" fill="#0B0F19" stroke="#00E676" stroke-width="2"/>
+<text x="813.0" y="165.2" fill="#00E676" font-size="11" font-weight="700" text-anchor="middle">8.46x</text>
+<circle cx="860.0" cy="137.9" r="5" fill="#0B0F19" stroke="#00E676" stroke-width="2"/>
+<text x="860.0" y="127.9" fill="#00E676" font-size="11" font-weight="700" text-anchor="middle">9.60x</text>
+<line x1="80" y1="60" x2="80" y2="450" stroke="#1F2937" stroke-width="2"/>
+<line x1="80" y1="450" x2="860" y2="450" stroke="#1F2937" stroke-width="2"/>
+<text x="470.0" y="505" fill="#F3F4F6" font-size="12" font-weight="600" text-anchor="middle">Task Count (Log Scale)</text>
+</svg>

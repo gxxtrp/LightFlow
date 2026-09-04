@@ -22,11 +22,27 @@ function(lightflow_set_compiler_warnings target_name)
         -Wdouble-promotion
         -Wformat=2
         -Wimplicit-fallthrough
+        -Wextra-semi
+        -Wmissing-declarations
+        -Wredundant-decls
+        -Wcast-qual
+        -Wfloat-equal
+        -Wundef
+        -Wvla
+        -fstrict-aliasing
+        -fno-exceptions
+        -fno-rtti
     )
 
     set(CLANG_CL_WARNINGS
         /W4
         /permissive-
+        /utf-8
+        /volatile:iso
+        /Zc:inline
+        /Zc:preprocessor
+        /EHs-c-
+        /GR-
         /w14242 # conversion from 'type1' to 'type2', possible loss of data
         /w14254 # conversion from 'type1' to 'type2', possible loss of data
         /w14263 # member function does not override any base class virtual member function
@@ -50,6 +66,30 @@ function(lightflow_set_compiler_warnings target_name)
     set(MSVC_WARNINGS
         /W4
         /permissive-
+        /utf-8
+        /volatile:iso
+        /Zc:inline
+        /Zc:preprocessor
+        /EHs-c-
+        /GR-
+        /w14242
+        /w14254
+        /w14263
+        /w14265
+        /w14287
+        /w14296
+        /w14311
+        /w14545
+        /w14546
+        /w14547
+        /w14549
+        /w14555
+        /w14619
+        /w14640
+        /w14826
+        /w14905
+        /w14906
+        /w14928
     )
 
     set(GCC_WARNINGS
@@ -68,6 +108,20 @@ function(lightflow_set_compiler_warnings target_name)
         -Wdouble-promotion
         -Wformat=2
         -Wimplicit-fallthrough
+        -Wextra-semi
+        -Wmissing-declarations
+        -Wredundant-decls
+        -Wcast-qual
+        -Wfloat-equal
+        -Wundef
+        -Wvla
+        -Wduplicated-cond
+        -Wduplicated-branches
+        -Wlogical-op
+        -Wuseless-cast
+        -fstrict-aliasing
+        -fno-exceptions
+        -fno-rtti
     )
 
     if(LF_WARNINGS_AS_ERRORS)

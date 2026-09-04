@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 520" width="900" height="520" style="background-color: #0B0F19; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+<text x="80" y="35" fill="#F3F4F6" font-size="18" font-weight="700">Wavefront Task Graph: Steady-State Heap Mallocs Profile</text>
+<text x="80" y="52" fill="#9CA3AF" font-size="12">Steady-State Heap Mallocs per Execution (Log Scale) — Zero is Hard Rule</text>
+<rect x="580" y="22" width="12" height="12" rx="3" fill="#00F0FF"/>
+<text x="598" y="33" fill="#F3F4F6" font-size="12" font-weight="600">LightFlow (Strictly 0)</text>
+<rect x="730" y="22" width="12" height="12" rx="3" fill="#FF4757"/>
+<text x="748" y="33" fill="#F3F4F6" font-size="12" font-weight="600">Classic (std::mutex/cv)</text>
+<line x1="80" y1="450.0" x2="860" y2="450.0" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="70" y="454.0" fill="#9CA3AF" font-size="11" text-anchor="end">1</text>
+<line x1="80" y1="401.25" x2="860" y2="401.25" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="70" y="405.25" fill="#9CA3AF" font-size="11" text-anchor="end">10</text>
+<line x1="80" y1="352.5" x2="860" y2="352.5" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="70" y="356.5" fill="#9CA3AF" font-size="11" text-anchor="end">100</text>
+<line x1="80" y1="303.75" x2="860" y2="303.75" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="70" y="307.75" fill="#9CA3AF" font-size="11" text-anchor="end">1K</text>
+<line x1="80" y1="255.0" x2="860" y2="255.0" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="70" y="259.0" fill="#9CA3AF" font-size="11" text-anchor="end">10K</text>
+<line x1="80" y1="206.25" x2="860" y2="206.25" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="70" y="210.25" fill="#9CA3AF" font-size="11" text-anchor="end">100K</text>
+<line x1="80" y1="157.5" x2="860" y2="157.5" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="70" y="161.5" fill="#9CA3AF" font-size="11" text-anchor="end">1M</text>
+<line x1="80" y1="108.75" x2="860" y2="108.75" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="70" y="112.75" fill="#9CA3AF" font-size="11" text-anchor="end">10M</text>
+<line x1="80" y1="60.0" x2="860" y2="60.0" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="70" y="64.0" fill="#9CA3AF" font-size="11" text-anchor="end">100M</text>
+<line x1="80.0" y1="60" x2="80.0" y2="450" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="80.0" y="470" fill="#9CA3AF" font-size="11" text-anchor="middle">100</text>
+<line x1="236.0" y1="60" x2="236.0" y2="450" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="236.0" y="470" fill="#9CA3AF" font-size="11" text-anchor="middle">1K</text>
+<line x1="392.0" y1="60" x2="392.0" y2="450" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="392.0" y="470" fill="#9CA3AF" font-size="11" text-anchor="middle">10K</text>
+<line x1="501.0393206764189" y1="60" x2="501.0393206764189" y2="450" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="501.0393206764189" y="470" fill="#9CA3AF" font-size="11" text-anchor="middle">50K</text>
+<line x1="548.0" y1="60" x2="548.0" y2="450" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="548.0" y="470" fill="#9CA3AF" font-size="11" text-anchor="middle">100K</text>
+<line x1="657.0393206764189" y1="60" x2="657.0393206764189" y2="450" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="657.0393206764189" y="470" fill="#9CA3AF" font-size="11" text-anchor="middle">500K</text>
+<line x1="704.0" y1="60" x2="704.0" y2="450" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="704.0" y="470" fill="#9CA3AF" font-size="11" text-anchor="middle">1M</text>
+<line x1="813.0393206764189" y1="60" x2="813.0393206764189" y2="450" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="813.0393206764189" y="470" fill="#9CA3AF" font-size="11" text-anchor="middle">5M</text>
+<line x1="860.0" y1="60" x2="860.0" y2="450" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="860.0" y="470" fill="#9CA3AF" font-size="11" text-anchor="middle">10M</text>
+<path d="M 80.0 351.7 L 236.0 303.7 L 392.0 255.0 L 501.0 220.9 L 548.0 206.2 L 657.0 172.2 L 704.0 157.5 L 813.0 123.4 L 860.0 108.7" fill="none" stroke="#FF4757" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="80.0" cy="351.7" r="5" fill="#0B0F19" stroke="#FF4757" stroke-width="2"/>
+<circle cx="236.0" cy="303.7" r="5" fill="#0B0F19" stroke="#FF4757" stroke-width="2"/>
+<circle cx="392.0" cy="255.0" r="5" fill="#0B0F19" stroke="#FF4757" stroke-width="2"/>
+<circle cx="501.0" cy="220.9" r="5" fill="#0B0F19" stroke="#FF4757" stroke-width="2"/>
+<circle cx="548.0" cy="206.2" r="5" fill="#0B0F19" stroke="#FF4757" stroke-width="2"/>
+<circle cx="657.0" cy="172.2" r="5" fill="#0B0F19" stroke="#FF4757" stroke-width="2"/>
+<circle cx="704.0" cy="157.5" r="5" fill="#0B0F19" stroke="#FF4757" stroke-width="2"/>
+<circle cx="813.0" cy="123.4" r="5" fill="#0B0F19" stroke="#FF4757" stroke-width="2"/>
+<circle cx="860.0" cy="108.7" r="5" fill="#0B0F19" stroke="#FF4757" stroke-width="2"/>
+<line x1="80" y1="450" x2="860" y2="450" stroke="#00F0FF" stroke-width="4" stroke-linecap="round"/>
+<circle cx="80.0" cy="450.0" r="6" fill="#00F0FF" stroke="#0B0F19" stroke-width="2"/>
+<circle cx="236.0" cy="450.0" r="6" fill="#00F0FF" stroke="#0B0F19" stroke-width="2"/>
+<circle cx="392.0" cy="450.0" r="6" fill="#00F0FF" stroke="#0B0F19" stroke-width="2"/>
+<circle cx="501.0" cy="450.0" r="6" fill="#00F0FF" stroke="#0B0F19" stroke-width="2"/>
+<circle cx="548.0" cy="450.0" r="6" fill="#00F0FF" stroke="#0B0F19" stroke-width="2"/>
+<circle cx="657.0" cy="450.0" r="6" fill="#00F0FF" stroke="#0B0F19" stroke-width="2"/>
+<circle cx="704.0" cy="450.0" r="6" fill="#00F0FF" stroke="#0B0F19" stroke-width="2"/>
+<circle cx="813.0" cy="450.0" r="6" fill="#00F0FF" stroke="#0B0F19" stroke-width="2"/>
+<circle cx="860.0" cy="450.0" r="6" fill="#00F0FF" stroke="#0B0F19" stroke-width="2"/>
+<line x1="80" y1="60" x2="80" y2="450" stroke="#1F2937" stroke-width="2"/>
+<line x1="80" y1="450" x2="860" y2="450" stroke="#1F2937" stroke-width="2"/>
+<text x="470.0" y="505" fill="#F3F4F6" font-size="12" font-weight="600" text-anchor="middle">Task Count (Log Scale)</text>
+</svg>

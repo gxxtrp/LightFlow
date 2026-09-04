@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 520" width="900" height="520" style="background-color: #0B0F19; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+<defs>
+<linearGradient id="cyanGlow" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#00F0FF"/><stop offset="100%" stop-color="#7000FF"/></linearGradient>
+<linearGradient id="orangeGlow" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#FF4757"/><stop offset="100%" stop-color="#FFA502"/></linearGradient>
+</defs>
+<text x="90" y="35" fill="#F3F4F6" font-size="18" font-weight="700">Wavefront Task Graph: Latency Scaling (100 to 10M Tasks)</text>
+<text x="90" y="52" fill="#9CA3AF" font-size="12">Execution Latency Scaling (Log-Log Scale) — Lower is Better</text>
+<rect x="580" y="22" width="12" height="12" rx="3" fill="#00F0FF"/>
+<text x="598" y="33" fill="#F3F4F6" font-size="12" font-weight="600">LightFlow (Lock-Free)</text>
+<rect x="730" y="22" width="12" height="12" rx="3" fill="#FF4757"/>
+<text x="748" y="33" fill="#F3F4F6" font-size="12" font-weight="600">Classic ThreadPool</text>
+<line x1="90" y1="450.0" x2="860" y2="450.0" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="80" y="454.0" fill="#9CA3AF" font-size="11" text-anchor="end">10.0 µs</text>
+<line x1="90" y1="394.2857142857143" x2="860" y2="394.2857142857143" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="80" y="398.2857142857143" fill="#9CA3AF" font-size="11" text-anchor="end">100.0 µs</text>
+<line x1="90" y1="338.57142857142856" x2="860" y2="338.57142857142856" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="80" y="342.57142857142856" fill="#9CA3AF" font-size="11" text-anchor="end">1.00 ms</text>
+<line x1="90" y1="282.8571428571429" x2="860" y2="282.8571428571429" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="80" y="286.8571428571429" fill="#9CA3AF" font-size="11" text-anchor="end">10.00 ms</text>
+<line x1="90" y1="227.14285714285717" x2="860" y2="227.14285714285717" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="80" y="231.14285714285717" fill="#9CA3AF" font-size="11" text-anchor="end">100.00 ms</text>
+<line x1="90" y1="171.42857142857144" x2="860" y2="171.42857142857144" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="80" y="175.42857142857144" fill="#9CA3AF" font-size="11" text-anchor="end">1.00 s</text>
+<line x1="90" y1="115.71428571428572" x2="860" y2="115.71428571428572" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="80" y="119.71428571428572" fill="#9CA3AF" font-size="11" text-anchor="end">10.00 s</text>
+<line x1="90" y1="60.0" x2="860" y2="60.0" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="80" y="64.0" fill="#9CA3AF" font-size="11" text-anchor="end">100.00 s</text>
+<line x1="90.0" y1="60" x2="90.0" y2="450" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="90.0" y="470" fill="#9CA3AF" font-size="11" text-anchor="middle">100</text>
+<line x1="244.0" y1="60" x2="244.0" y2="450" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="244.0" y="470" fill="#9CA3AF" font-size="11" text-anchor="middle">1K</text>
+<line x1="398.0" y1="60" x2="398.0" y2="450" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="398.0" y="470" fill="#9CA3AF" font-size="11" text-anchor="middle">10K</text>
+<line x1="552.0" y1="60" x2="552.0" y2="450" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="552.0" y="470" fill="#9CA3AF" font-size="11" text-anchor="middle">100K</text>
+<line x1="706.0" y1="60" x2="706.0" y2="450" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="706.0" y="470" fill="#9CA3AF" font-size="11" text-anchor="middle">1M</text>
+<line x1="860.0" y1="60" x2="860.0" y2="450" stroke="#1F293D" stroke-width="1" stroke-dasharray="4,4"/>
+<text x="860.0" y="470" fill="#9CA3AF" font-size="11" text-anchor="middle">10M</text>
+<line x1="90" y1="60" x2="90" y2="450" stroke="#1F2937" stroke-width="2"/>
+<line x1="90" y1="450" x2="860" y2="450" stroke="#1F2937" stroke-width="2"/>
+<text x="475.0" y="505" fill="#F3F4F6" font-size="12" font-weight="600" text-anchor="middle">Task Count (Log Scale)</text>
+<text x="25" y="255.0" fill="#F3F4F6" font-size="12" font-weight="600" text-anchor="middle" transform="rotate(-90 25 255.0)">Mean Latency</text>
+<path d="M 90.0 400.8 L 244.0 352.4 L 398.0 290.1 L 505.6 251.3 L 552.0 232.7 L 659.6 196.5 L 706.0 178.1 L 813.6 139.7 L 860.0 119.3" fill="none" stroke="#FF4757" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="90.0" cy="400.8" r="5" fill="#0B0F19" stroke="#FF4757" stroke-width="2"/>
+<circle cx="244.0" cy="352.4" r="5" fill="#0B0F19" stroke="#FF4757" stroke-width="2"/>
+<circle cx="398.0" cy="290.1" r="5" fill="#0B0F19" stroke="#FF4757" stroke-width="2"/>
+<circle cx="505.6" cy="251.3" r="5" fill="#0B0F19" stroke="#FF4757" stroke-width="2"/>
+<circle cx="552.0" cy="232.7" r="5" fill="#0B0F19" stroke="#FF4757" stroke-width="2"/>
+<circle cx="659.6" cy="196.5" r="5" fill="#0B0F19" stroke="#FF4757" stroke-width="2"/>
+<circle cx="706.0" cy="178.1" r="5" fill="#0B0F19" stroke="#FF4757" stroke-width="2"/>
+<circle cx="813.6" cy="139.7" r="5" fill="#0B0F19" stroke="#FF4757" stroke-width="2"/>
+<circle cx="860.0" cy="119.3" r="5" fill="#0B0F19" stroke="#FF4757" stroke-width="2"/>
+<path d="M 90.0 407.6 L 244.0 355.1 L 398.0 306.0 L 505.6 279.3 L 552.0 262.5 L 659.6 242.4 L 706.0 228.2 L 813.6 191.4 L 860.0 174.0" fill="none" stroke="#00F0FF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="90.0" cy="407.6" r="5" fill="#0B0F19" stroke="#00F0FF" stroke-width="2"/>
+<circle cx="244.0" cy="355.1" r="5" fill="#0B0F19" stroke="#00F0FF" stroke-width="2"/>
+<circle cx="398.0" cy="306.0" r="5" fill="#0B0F19" stroke="#00F0FF" stroke-width="2"/>
+<circle cx="505.6" cy="279.3" r="5" fill="#0B0F19" stroke="#00F0FF" stroke-width="2"/>
+<circle cx="552.0" cy="262.5" r="5" fill="#0B0F19" stroke="#00F0FF" stroke-width="2"/>
+<circle cx="659.6" cy="242.4" r="5" fill="#0B0F19" stroke="#00F0FF" stroke-width="2"/>
+<circle cx="706.0" cy="228.2" r="5" fill="#0B0F19" stroke="#00F0FF" stroke-width="2"/>
+<circle cx="813.6" cy="191.4" r="5" fill="#0B0F19" stroke="#00F0FF" stroke-width="2"/>
+<circle cx="860.0" cy="174.0" r="5" fill="#0B0F19" stroke="#00F0FF" stroke-width="2"/>
+</svg>

@@ -18,6 +18,7 @@ include(CompilerWarnings)
 option(LF_BUILD_TESTS "Build LightFlow unit tests" ON)
 option(LF_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
 option(LF_ENABLE_TRACY "Enable Tracy profiler instrumentation" OFF)
+option(LF_ENABLE_VULKAN_HELPERS "Enable Vulkan 1.3 Synchronization2 helpers" ON)
 option(LF_ENABLE_ASAN "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 option(LF_ENABLE_TSAN "Enable ThreadSanitizer" OFF)
 
@@ -33,6 +34,7 @@ if(LF_ENABLE_ASAN)
         add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
         add_link_options(-fsanitize=address,undefined)
     endif()
+    add_compile_definitions(LF_ENABLE_ASAN=1)
 endif()
 
 if(LF_ENABLE_TSAN)
@@ -42,6 +44,7 @@ if(LF_ENABLE_TSAN)
         add_compile_options(-fsanitize=thread -fno-omit-frame-pointer)
         add_link_options(-fsanitize=thread)
     endif()
+    add_compile_definitions(LF_ENABLE_TSAN=1)
 endif()
 
 # Tracy Profiler Integration
@@ -52,7 +55,7 @@ if(LF_ENABLE_TRACY)
         FetchContent_Declare(
             tracy
             GIT_REPOSITORY https://github.com/wolfpld/tracy.git
-            GIT_TAG        v0.11.1
+            GIT_TAG        v0.13.1
             GIT_SHALLOW    TRUE
         )
         FetchContent_MakeAvailable(tracy)
@@ -62,6 +65,12 @@ endif()
 # Library Target: LightFlow
 add_library(LightFlow STATIC
     src/lightflow.cpp
+    src/memory_pool.cpp
+    src/slab_arena.cpp
+    src/chase_lev_deque.cpp
+    src/task_scheduler.cpp
+    src/task_graph.cpp
+    src/timeline_reactor.cpp
 )
 add_library(lf::LightFlow ALIAS LightFlow)
 
@@ -81,8 +90,21 @@ if(LF_ENABLE_TRACY)
     target_link_libraries(LightFlow PUBLIC Tracy::TracyClient)
 endif()
 
+if(LF_ENABLE_VULKAN_HELPERS)
+    target_compile_definitions(LightFlow PUBLIC LF_ENABLE_VULKAN_HELPERS=1)
+endif()
+
 # Tests Subdirectory
 if(LF_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
+
+# Dedicated Benchmark Sweep Tool
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tools/lf_sweep_benchmark.cpp")
+    add_executable(lf_sweep_benchmark tools/lf_sweep_benchmark.cpp)
+    target_link_libraries(lf_sweep_benchmark PRIVATE lf::LightFlow)
+    target_compile_features(lf_sweep_benchmark PRIVATE cxx_std_23)
+    lightflow_set_compiler_warnings(lf_sweep_benchmark)
+endif()
+
