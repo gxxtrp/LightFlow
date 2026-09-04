@@ -108,7 +108,7 @@ namespace lf {
 
 * **POSIX (Linux, macOS, BSD)**: Allocates via `posix_memalign` and deallocates via `free`.
 * **Windows (MSVC, Clang-cl)**: Allocates via `_aligned_malloc` and deallocates via `_aligned_free`.
-* **Unified Pipeline**: Platform memory is not a hidden backdoor; it is simply the default `MemoryCallbacks` instance used when no custom callbacks are configured.
+* **Unified Pipeline**: Under strict console sandboxing (`LF_DISABLE_PLATFORM_ALLOCATOR=ON`, default), platform memory is physically compiled out of the binary. When opted into (`LF_DISABLE_PLATFORM_ALLOCATOR=OFF`), `platform_memory_callbacks()` serves as an explicit, traceable platform adapter rather than an invisible backdoor.
 
 ---
 
@@ -122,15 +122,9 @@ public:
     static constexpr usize DEFAULT_INITIAL_SLABS = 256; // 16 MB
     static constexpr usize DEFAULT_CHUNK_SLABS = 256;   // 16 MB
 
-#if !defined(LF_DISABLE_PLATFORM_ALLOCATOR)
     explicit BlockPool(usize initial_slabs = DEFAULT_INITIAL_SLABS,
                        usize chunk_slabs = DEFAULT_CHUNK_SLABS,
                        bool allow_growth = true) noexcept;
-#else
-    explicit BlockPool(usize initial_slabs = 0,
-                       usize chunk_slabs = DEFAULT_CHUNK_SLABS,
-                       bool allow_growth = false) noexcept;
-#endif
 
     explicit BlockPool(const MemoryCallbacks& callbacks,
                        usize initial_slabs = DEFAULT_INITIAL_SLABS,

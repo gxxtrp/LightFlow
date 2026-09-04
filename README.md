@@ -335,8 +335,9 @@ set(LF_ENABLE_VULKAN_HELPERS ON CACHE BOOL "" FORCE)
 # Build tests and comparison suites
 set(LF_BUILD_TESTS ON CACHE BOOL "" FORCE)
 
-# Disable libc virtual memory allocator for console sandboxing (PS5, Xbox, Switch)
-set(LF_DISABLE_PLATFORM_ALLOCATOR ON CACHE BOOL "" FORCE)
+# Strict console sandboxing is ON by default (zero libc virtual memory in binary).
+# To opt into host platform virtual memory for standalone desktop CLI tools:
+# set(LF_DISABLE_PLATFORM_ALLOCATOR OFF CACHE BOOL "" FORCE)
 ```
 
 ### Building & Running the Benchmark Suite
