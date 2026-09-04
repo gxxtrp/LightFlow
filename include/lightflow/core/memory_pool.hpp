@@ -73,6 +73,10 @@ public:
     explicit BlockPool(usize initial_slabs = DEFAULT_INITIAL_SLABS,
                        usize chunk_slabs = DEFAULT_CHUNK_SLABS,
                        bool allow_growth = true) noexcept;
+#else
+    explicit BlockPool(usize initial_slabs = 0,
+                       usize chunk_slabs = DEFAULT_CHUNK_SLABS,
+                       bool allow_growth = false) noexcept;
 #endif
 
     explicit BlockPool(const MemoryCallbacks& callbacks,

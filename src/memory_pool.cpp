@@ -54,6 +54,9 @@ MemoryCallbacks platform_memory_callbacks() noexcept {
 
 BlockPool::BlockPool(usize initial_slabs, usize chunk_slabs, bool allow_growth) noexcept
     : BlockPool(platform_memory_callbacks(), initial_slabs, chunk_slabs, allow_growth) {}
+#else
+BlockPool::BlockPool(usize initial_slabs, usize chunk_slabs, bool allow_growth) noexcept
+    : BlockPool(MemoryCallbacks{}, initial_slabs, chunk_slabs, allow_growth) {}
 #endif
 
 BlockPool::BlockPool(const MemoryCallbacks& callbacks,
@@ -63,7 +66,8 @@ BlockPool::BlockPool(const MemoryCallbacks& callbacks,
     : m_chunk_slabs(chunk_slabs > 0 ? chunk_slabs : DEFAULT_CHUNK_SLABS),
       m_allow_growth(allow_growth),
       m_callbacks(callbacks) {
-    LF_ASSERT(callbacks.alloc != nullptr && callbacks.free != nullptr);
+    LF_ASSERT((callbacks.alloc == nullptr && callbacks.free == nullptr) ||
+              (callbacks.alloc != nullptr && callbacks.free != nullptr));
 
     if (!m_callbacks.is_valid()) {
         m_allow_growth = false;
