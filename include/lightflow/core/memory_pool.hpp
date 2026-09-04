@@ -89,10 +89,17 @@ public:
     /// Returns the global default BlockPool instance.
     LF_NODISCARD static BlockPool& global() noexcept;
 
-    // Non-copyable, non-movable
+    /// Creates a BlockPool backed by a pre-allocated static contiguous memory buffer.
+    /// The buffer is partitioned into 64KB slabs aligned to 64KB. Dynamic growth is permanently disabled.
+    /// Non-owning semantics: the buffer memory is never deallocated on pool destruction.
+    LF_NODISCARD static BlockPool from_buffer(void* buffer, usize bytes) noexcept;
+
+    // Move constructible
+    BlockPool(BlockPool&& other) noexcept;
+
+    // Non-copyable, non-move-assignable
     BlockPool(const BlockPool&) = delete;
     BlockPool& operator=(const BlockPool&) = delete;
-    BlockPool(BlockPool&&) = delete;
     BlockPool& operator=(BlockPool&&) = delete;
 
     /// Acquires a single 64KB slab from the pool freelist.
@@ -126,7 +133,10 @@ private:
         void* base_ptr{nullptr};
         usize slab_count{0};
         Chunk* next{nullptr};
+        bool is_owned{true};
     };
+
+    explicit BlockPool(void* buffer, usize bytes) noexcept;
 
     /// Allocates an OS-level chunk of contiguous 64KB slabs and pushes them to the freelist.
     Slab* allocate_chunk_and_acquire() noexcept;

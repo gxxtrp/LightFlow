@@ -79,7 +79,7 @@ BlockPool::BlockPool(const MemoryCallbacks& callbacks,
         void* raw_mem = m_callbacks.alloc(total_bytes, SLAB_SIZE, m_callbacks.user_data);
 
         if (raw_mem != nullptr) {
-            auto* chunk = new (std::nothrow) Chunk{raw_mem, initial_slabs, nullptr};
+            auto* chunk = new (std::nothrow) Chunk{raw_mem, initial_slabs, nullptr, true};
             if (chunk == nullptr) {
                 m_callbacks.free(raw_mem, total_bytes, SLAB_SIZE, m_callbacks.user_data);
                 return;
@@ -104,11 +104,84 @@ BlockPool::BlockPool(const MemoryCallbacks& callbacks,
     }
 }
 
+BlockPool BlockPool::from_buffer(void* buffer, usize bytes) noexcept {
+    return BlockPool(buffer, bytes);
+}
+
+BlockPool::BlockPool(void* buffer, usize bytes) noexcept
+    : m_chunk_slabs(0),
+      m_allow_growth(false),
+      m_callbacks(MemoryCallbacks{}) {
+    auto raw_addr = reinterpret_cast<std::uintptr_t>(buffer);
+    std::uintptr_t aligned_addr = 0;
+    usize offset = 0;
+    usize usable_bytes = 0;
+    usize slab_count = 0;
+
+    if (buffer != nullptr) {
+        aligned_addr = (raw_addr + (SLAB_SIZE - 1)) & ~(static_cast<std::uintptr_t>(SLAB_SIZE - 1));
+        offset = static_cast<usize>(aligned_addr - raw_addr);
+        usable_bytes = (bytes >= offset) ? (bytes - offset) : 0;
+        slab_count = usable_bytes / SLAB_SIZE;
+    }
+
+    LF_ASSERT(buffer != nullptr && usable_bytes >= SLAB_SIZE);
+
+    if (slab_count == 0) {
+        return;
+    }
+
+    void* aligned_ptr = reinterpret_cast<void*>(aligned_addr);
+    auto* base_bytes = static_cast<std::byte*>(aligned_ptr);
+    for (usize i = 0; i < slab_count; ++i) {
+        auto* current = reinterpret_cast<Slab*>(base_bytes + (i * SLAB_SIZE));
+        auto* next = (i + 1 < slab_count)
+            ? reinterpret_cast<Slab*>(base_bytes + ((i + 1) * SLAB_SIZE))
+            : nullptr;
+        current->next.store(next, std::memory_order_relaxed);
+    }
+
+    auto* chunk = new (std::nothrow) Chunk{
+        .base_ptr = aligned_ptr,
+        .slab_count = slab_count,
+        .next = nullptr,
+        .is_owned = false
+    };
+    if (chunk != nullptr) {
+        m_chunks.store(chunk, std::memory_order_relaxed);
+    }
+
+    auto* first_slab = reinterpret_cast<Slab*>(base_bytes);
+    m_head.store(TaggedSlab{first_slab, 0}, std::memory_order_release);
+    m_available_slabs.store(slab_count, std::memory_order_release);
+    m_total_slabs.store(slab_count, std::memory_order_release);
+    m_chunk_count.store(1, std::memory_order_release);
+}
+
+BlockPool::BlockPool(BlockPool&& other) noexcept
+    : m_chunk_slabs(other.m_chunk_slabs),
+      m_allow_growth(other.m_allow_growth),
+      m_callbacks(other.m_callbacks) {
+    m_head.store(other.m_head.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    m_available_slabs.store(other.m_available_slabs.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    m_total_slabs.store(other.m_total_slabs.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    m_chunk_count.store(other.m_chunk_count.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    m_chunks.store(other.m_chunks.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    m_growth_lock.store(false, std::memory_order_relaxed);
+
+    other.m_head.store(TaggedSlab{nullptr, 0}, std::memory_order_relaxed);
+    other.m_available_slabs.store(0, std::memory_order_relaxed);
+    other.m_total_slabs.store(0, std::memory_order_relaxed);
+    other.m_chunk_count.store(0, std::memory_order_relaxed);
+    other.m_chunks.store(nullptr, std::memory_order_relaxed);
+    other.m_allow_growth = false;
+}
+
 BlockPool::~BlockPool() noexcept {
     Chunk* current = m_chunks.load(std::memory_order_relaxed);
     while (current != nullptr) {
         Chunk* next = current->next;
-        if (m_callbacks.free != nullptr && current->base_ptr != nullptr) {
+        if (current->is_owned && m_callbacks.free != nullptr && current->base_ptr != nullptr) {
             m_callbacks.free(current->base_ptr, current->slab_count * SLAB_SIZE, SLAB_SIZE, m_callbacks.user_data);
         }
         delete current;
@@ -205,7 +278,7 @@ Slab* BlockPool::allocate_chunk_and_acquire() noexcept {
         return nullptr;
     }
 
-    auto* chunk = new (std::nothrow) Chunk{raw_mem, count, nullptr};
+    auto* chunk = new (std::nothrow) Chunk{raw_mem, count, nullptr, true};
     if (chunk == nullptr) {
         m_callbacks.free(raw_mem, total_bytes, SLAB_SIZE, m_callbacks.user_data);
         m_growth_lock.store(false, std::memory_order_release);

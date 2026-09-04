@@ -603,3 +603,185 @@ TEST_CASE("BlockPool default constructor backwards compatibility", "[memory][cal
     REQUIRE(pool.acquire_slab() == nullptr);
 #endif
 }
+
+// =============================================================================
+// Static Buffer BlockPool Factory (BlockPool::from_buffer) Tests
+// =============================================================================
+
+TEST_CASE("BlockPool static buffer factory (from_buffer) alignment, capacity, and lifecycle", "[memory][buffer]") {
+    SECTION("Unaligned buffer pointer realignment and exact slab capacity calculation") {
+        constexpr usize BUFFER_SLABS = 3;
+        constexpr usize BUFFER_SIZE = (BUFFER_SLABS + 1) * SLAB_SIZE;
+        std::vector<std::byte> raw_buffer(BUFFER_SIZE);
+
+        // Intentionally offset the buffer pointer so it is not 64KB aligned
+        constexpr usize MISALIGNMENT_OFFSET = 128;
+        void* unaligned_ptr = static_cast<void*>(raw_buffer.data() + MISALIGNMENT_OFFSET);
+        usize raw_bytes = BUFFER_SIZE - MISALIGNMENT_OFFSET;
+
+        auto raw_addr = reinterpret_cast<std::uintptr_t>(unaligned_ptr);
+        auto aligned_addr = (raw_addr + (SLAB_SIZE - 1)) & ~(static_cast<std::uintptr_t>(SLAB_SIZE - 1));
+        usize expected_offset = static_cast<usize>(aligned_addr - raw_addr);
+        usize expected_slabs = (raw_bytes - expected_offset) / SLAB_SIZE;
+
+        REQUIRE(expected_slabs >= BUFFER_SLABS);
+
+        BlockPool pool = BlockPool::from_buffer(unaligned_ptr, raw_bytes);
+        REQUIRE(pool.total_slabs() == expected_slabs);
+        REQUIRE(pool.available_slabs() == expected_slabs);
+        REQUIRE(pool.chunk_count() == 1);
+        REQUIRE_FALSE(pool.callbacks().is_valid());
+
+        // Verify all acquired slabs are strictly aligned to 64KB
+        std::vector<Slab*> acquired;
+        acquired.reserve(expected_slabs);
+        for (usize i = 0; i < expected_slabs; ++i) {
+            Slab* s = pool.acquire_slab();
+            REQUIRE(s != nullptr);
+            REQUIRE(reinterpret_cast<std::uintptr_t>(s) % SLAB_SIZE == 0);
+            REQUIRE(reinterpret_cast<std::uintptr_t>(s->payload()) % CACHELINE_SIZE == 0);
+
+            // Verify payload write and read
+            std::memset(s->payload(), static_cast<int>(0x55 + i), Slab::PAYLOAD_SIZE);
+            acquired.push_back(s);
+        }
+
+        REQUIRE(pool.available_slabs() == 0);
+
+        // Verify data integrity
+        for (usize i = 0; i < expected_slabs; ++i) {
+            REQUIRE(acquired[i]->payload()[0] == static_cast<std::byte>(0x55 + i));
+            pool.release_slab(acquired[i]);
+        }
+        REQUIRE(pool.available_slabs() == expected_slabs);
+    }
+
+    SECTION("Strict non-owning semantics: ~BlockPool() never calls free on static buffer") {
+        CustomTrackingAllocator tracker{};
+        MemoryCallbacks callbacks{
+            .alloc = &test_custom_alloc,
+            .free = &test_custom_free,
+            .user_data = &tracker
+        };
+
+        constexpr usize STATIC_SLABS = 4;
+        constexpr usize STATIC_BYTES = STATIC_SLABS * SLAB_SIZE;
+        void* engine_buffer = callbacks.alloc(STATIC_BYTES, SLAB_SIZE, callbacks.user_data);
+        REQUIRE(engine_buffer != nullptr);
+        REQUIRE(tracker.alloc_calls == 1);
+        REQUIRE(tracker.free_calls == 0);
+
+        {
+            BlockPool pool = BlockPool::from_buffer(engine_buffer, STATIC_BYTES);
+            REQUIRE(pool.total_slabs() == STATIC_SLABS);
+            REQUIRE(pool.available_slabs() == STATIC_SLABS);
+
+            Slab* s1 = pool.acquire_slab();
+            REQUIRE(s1 != nullptr);
+            std::memset(s1->payload(), 0xAA, Slab::PAYLOAD_SIZE);
+            pool.release_slab(s1);
+        } // BlockPool destroyed here!
+
+        // Non-owning guarantee: tracker free_calls must strictly remain 0
+        REQUIRE(tracker.free_calls == 0);
+
+        // Verify buffer memory was not corrupted by pool destruction
+        auto* first_slab = reinterpret_cast<Slab*>(engine_buffer);
+        REQUIRE(first_slab->payload()[0] == static_cast<std::byte>(0xAA));
+
+        // Engine retains ownership and safely deallocates its buffer
+        callbacks.free(engine_buffer, STATIC_BYTES, SLAB_SIZE, callbacks.user_data);
+        REQUIRE(tracker.free_calls == 1);
+    }
+
+    SECTION("Strict fail-fast when buffer slabs are exhausted (growth permanently disabled)") {
+        alignas(SLAB_SIZE) std::array<std::byte, SLAB_SIZE * 2> buffer{};
+        BlockPool pool = BlockPool::from_buffer(buffer.data(), buffer.size());
+
+        REQUIRE(pool.total_slabs() == 2);
+        REQUIRE(pool.available_slabs() == 2);
+
+        Slab* s1 = pool.acquire_slab();
+        Slab* s2 = pool.acquire_slab();
+        REQUIRE(s1 != nullptr);
+        REQUIRE(s2 != nullptr);
+        REQUIRE(pool.available_slabs() == 0);
+
+        // Pool is exhausted: acquire_slab MUST return nullptr immediately without growing
+        Slab* s3 = pool.acquire_slab();
+        REQUIRE(s3 == nullptr);
+        REQUIRE(pool.total_slabs() == 2);
+        REQUIRE(pool.available_slabs() == 0);
+        REQUIRE(pool.chunk_count() == 1);
+
+        // Releasing a slab restores availability
+        pool.release_slab(s1);
+        REQUIRE(pool.available_slabs() == 1);
+
+        Slab* s1_reacquired = pool.acquire_slab();
+        REQUIRE(s1_reacquired == s1);
+        REQUIRE(pool.available_slabs() == 0);
+        REQUIRE(pool.acquire_slab() == nullptr);
+
+        pool.release_slab(s1_reacquired);
+        pool.release_slab(s2);
+        REQUIRE(pool.available_slabs() == 2);
+    }
+
+    SECTION("SlabArena bump allocation and multi-slab chaining on static buffer pool") {
+        alignas(SLAB_SIZE) std::array<std::byte, SLAB_SIZE * 2> buffer{};
+        BlockPool pool = BlockPool::from_buffer(buffer.data(), buffer.size());
+
+        {
+            SlabArena arena(pool);
+
+            // Bump allocation within first slab
+            void* p1 = arena.allocate(1024, 64);
+            REQUIRE(p1 != nullptr);
+            REQUIRE(reinterpret_cast<std::uintptr_t>(p1) % 64 == 0);
+
+            // Allocate large chunk to chain second slab
+            constexpr usize ALLOC_SIZE = 40000;
+            void* p2 = arena.allocate(ALLOC_SIZE, 64);
+            REQUIRE(p2 != nullptr);
+            void* p3 = arena.allocate(ALLOC_SIZE, 64);
+            REQUIRE(p3 != nullptr);
+
+            // Both slabs in the static pool are now acquired
+            REQUIRE(pool.available_slabs() == 0);
+
+            // Exhaustion in SlabArena when pool cannot grow returns nullptr
+            void* p_overflow = arena.allocate(ALLOC_SIZE, 64);
+            REQUIRE(p_overflow == nullptr);
+
+            // Resetting arena releases chained slabs back to BlockPool in O(1)
+            arena.reset();
+            REQUIRE(pool.available_slabs() == 2);
+        }
+    }
+
+    SECTION("BlockPool move construction transfers slabs and leaves source empty") {
+        alignas(SLAB_SIZE) std::array<std::byte, SLAB_SIZE * 2> buffer{};
+        BlockPool src = BlockPool::from_buffer(buffer.data(), buffer.size());
+        REQUIRE(src.total_slabs() == 2);
+        REQUIRE(src.available_slabs() == 2);
+
+        BlockPool dst = std::move(src);
+        REQUIRE(dst.total_slabs() == 2);
+        REQUIRE(dst.available_slabs() == 2);
+        REQUIRE(dst.chunk_count() == 1);
+
+        // Source must be empty and inert
+        REQUIRE(src.total_slabs() == 0);
+        REQUIRE(src.available_slabs() == 0);
+        REQUIRE(src.chunk_count() == 0);
+        REQUIRE(src.acquire_slab() == nullptr);
+
+        // Target can acquire and release normally
+        Slab* s = dst.acquire_slab();
+        REQUIRE(s != nullptr);
+        REQUIRE(dst.available_slabs() == 1);
+        dst.release_slab(s);
+        REQUIRE(dst.available_slabs() == 2);
+    }
+}
