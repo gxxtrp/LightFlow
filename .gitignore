@@ -1,5 +1,6 @@
 # Build and distribution directories
 build/
+build*/
 bin/
 lib/
 out/

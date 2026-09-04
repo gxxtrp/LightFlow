@@ -2,7 +2,7 @@
 
 [![C++23](https://img.shields.io/badge/C%2B%2B-23-blue.svg)](https://en.cppreference.com/w/cpp/23)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Build & Tests](https://img.shields.io/badge/Tests-29%2F29%20Passing-brightgreen.svg)]()
+[![Build & Tests](https://img.shields.io/badge/Tests-41%2F41%20Passing-brightgreen.svg)]()
 [![Zero Heap Allocations](https://img.shields.io/badge/Steady--State%20Mallocs-0-blueviolet.svg)]()
 [![Max Speedup](https://img.shields.io/badge/Peak%20Speedup-10.22x-orange.svg)]()
 
@@ -16,6 +16,8 @@ Engineered with strict **mechanical sympathy** to execute within a **$< 0.5\text
 
 * **Zero Heap Allocations in Steady State (Hard Invariant)**:  
   Every task node, dependency edge, and chunk closure allocates from a thread-local monotonic bump allocator ([`SlabArena`](docs/api/memory.md)) backed by virtual memory slab pools ([`BlockPool`](docs/api/memory.md)). Frame-to-frame graph reset is an instant $O(1)$ pointer reset.
+* **Pluggable Memory Discipline & Engine Memory Ownership**:  
+  Transparent memory hooks via `MemoryCallbacks` with sized and aligned deallocation, zero virtual dispatch, and pre-allocated static buffer arenas (`BlockPool::from_buffer`). By default (`LF_DISABLE_PLATFORM_ALLOCATOR=ON`), all libc virtual memory calls (`posix_memalign`, `_aligned_malloc`) are physically compiled out of the binary with strict fail-fast semantics and zero silent fallbacks to libc heap.
 * **Lock-Free Work-Stealing Coordination**:  
   Workers utilize dynamic Chase-Lev ring-buffer deques paired with a dual-priority queue (strictly draining `High` priority critical-path tasks before `Normal` tasks) and multi-producer multi-consumer (MPMC) lock-free injection queues.
 * **Cacheline Packed & False-Sharing Immune**:  
@@ -41,9 +43,11 @@ flowchart TB
     end
 
     subgraph Memory["Zero-Allocation Memory Hierarchy"]
-        BP["BlockPool (64KB Slabs / 2MB Super-Slabs)"]
+        MC["MemoryCallbacks (OS mmap / VirtualAlloc / Static Buffer)"]
+        BP["BlockPool (64KB Slabs, Tagged Atomic ABA-Free Freelist)"]
         SA["Thread-Local SlabArena (Monotonic Bump)"]
         SBO["MoveOnlyTask (48-byte Small Buffer Optimization)"]
+        MC --> BP
         BP --> SA
         SA --> TG
     end
@@ -143,12 +147,17 @@ To view the live trace on macOS:
 #include <iostream>
 
 int main() {
-    // 1. Initialize persistent scheduler (owns worker pool and thread deques)
+    // 1. In default builds (LF_DISABLE_PLATFORM_ALLOCATOR=ON), allocate from a pre-allocated
+    // buffer or register engine hooks via BlockPool::set_global_callbacks().
+    alignas(lf::SLAB_SIZE) static std::byte memory[16 * 1024 * 1024]; // 16 MB buffer
+    auto pool = lf::BlockPool::from_buffer(memory, sizeof(memory));
+
+    // 2. Initialize persistent scheduler (owns worker pool and thread deques)
     lf::SchedulerConfig config{.workerCount = 8};
     lf::TaskScheduler scheduler(config);
 
-    // 2. Build graph using monotonic bump allocator
-    lf::TaskGraph graph;
+    // 3. Build graph using monotonic bump allocator backed by pool
+    lf::TaskGraph graph(&pool);
     
     auto t1 = graph.emplace("InitResources", []() noexcept {
         std::cout << "Step 1: Resources initialized\n";
@@ -166,7 +175,7 @@ int main() {
     t1.precede(t2);
     t2.precede(t3);
 
-    // 3. Execute graph (zero heap allocations)
+    // 4. Execute graph (zero heap allocations)
     scheduler.runAndWait(graph);
 
     return 0;
@@ -281,7 +290,7 @@ Deep-dive architecture, exact C++23 signatures, mechanical sympathy contracts, a
 3. [**TaskScheduler & Execution Engine**](docs/api/scheduler.md):  
    Chase-Lev work-stealing, dual-priority coordination queues, two-tier adaptive spin + futex parking, and execution domains (`Worker`, `MainThread`, `IO`).
 4. [**Zero-Allocation Memory Hierarchy**](docs/api/memory.md):  
-   Virtual memory `BlockPool`, thread-local `SlabArena`, `MoveOnlyTask` 48-byte SBO, and instructions for integrating custom engine page allocators.
+   Virtual memory `BlockPool`, `MemoryCallbacks` dynamic chunk provider, `BlockPool::from_buffer` static arena factory, strict fail-fast invariants, platform allocator isolation (`LF_DISABLE_PLATFORM_ALLOCATOR`), thread-local `SlabArena`, `MoveOnlyTask` 48-byte SBO, and production engine recipes.
 5. [**GPU Timeline Semaphore Synchronization**](docs/api/gpu-timeline.md):  
    `TimelineSyncPoint`, non-blocking `TimelineReactor`, hardware watchdog protection, native Vulkan 1.3 `VK_KHR_synchronization2` mapping, and DX12/Metal recipes.
 
@@ -330,6 +339,12 @@ set(LF_ENABLE_VULKAN_HELPERS ON CACHE BOOL "" FORCE)
 
 # Build tests and comparison suites
 set(LF_BUILD_TESTS ON CACHE BOOL "" FORCE)
+
+# Platform allocator (posix_memalign / _aligned_malloc) is disabled by default
+# across all builds (LF_DISABLE_PLATFORM_ALLOCATOR=ON) to guarantee zero hidden
+# virtual memory calls and complete host engine memory ownership.
+# To opt into host platform virtual memory for standalone desktop CLI tools:
+# set(LF_DISABLE_PLATFORM_ALLOCATOR OFF CACHE BOOL "" FORCE)
 ```
 
 ### Building & Running the Benchmark Suite
