@@ -224,19 +224,23 @@ LightFlow adheres to a strict fail-fast memory policy:
 
 ---
 
-## Hardened Console Sandbox Mode (`LF_DISABLE_PLATFORM_ALLOCATOR`)
+## Strict Console Sandbox Mode (`LF_DISABLE_PLATFORM_ALLOCATOR`)
 
-For console platforms (PlayStation 5, Xbox Series X/S, Nintendo Switch) and certified embedded runtimes where standard libc virtual memory calls (`posix_memalign`, `_aligned_malloc`) violate SDK guidelines or memory partitioning rules, LightFlow can be compiled with:
+By default, LightFlow enforces strict console sandboxing (`LF_DISABLE_PLATFORM_ALLOCATOR=ON`). This guarantees zero hidden platform virtual memory calls (`posix_memalign`, `_aligned_malloc`) and total memory ownership by the host engine.
 
 ```cmake
-set(LF_DISABLE_PLATFORM_ALLOCATOR ON CACHE BOOL "" FORCE)
+# Enabled by default:
+option(LF_DISABLE_PLATFORM_ALLOCATOR "Disable libc virtual memory allocator for strict console sandboxing" ON)
+
+# To opt into host platform virtual memory for standalone desktop CLI tools:
+set(LF_DISABLE_PLATFORM_ALLOCATOR OFF CACHE BOOL "" FORCE)
 ```
 
-When enabled:
+In default strict mode:
 * The symbols `posix_memalign`, `_aligned_malloc`, and `platform_memory_callbacks()` are **physically compiled out of the binary**.
-* Default `BlockPool` constructors initialize with `initial_slabs = 0` and `allow_growth = false`.
+* Default `BlockPool` instances inherit the globally configured engine callbacks (`BlockPool::global_callbacks()`).
 * The application **must** explicitly configure custom callbacks (`BlockPool::set_global_callbacks` or `BlockPool(callbacks)`) or use static buffers (`BlockPool::from_buffer`).
-* The test harness supports running the entire test suite in sandbox mode, proving zero platform memory dependencies end-to-end.
+* If accessed without valid callbacks, `BlockPool` fails fast (`LF_ASSERT`) immediately with zero silent fallbacks.
 
 ---
 

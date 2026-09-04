@@ -78,7 +78,6 @@ void install_test_allocator() noexcept {
     }
 }
 
-#if defined(LF_DISABLE_PLATFORM_ALLOCATOR)
 namespace {
 struct TestHarnessStaticBootstrap {
     TestHarnessStaticBootstrap() {
@@ -87,16 +86,13 @@ struct TestHarnessStaticBootstrap {
 };
 static TestHarnessStaticBootstrap s_staticBootstrap;
 } // anonymous namespace
-#endif
 
 class TestHarnessEventListener : public Catch::EventListenerBase {
 public:
     using Catch::EventListenerBase::EventListenerBase;
 
     void testRunStarting(Catch::TestRunInfo const& /*testRunInfo*/) override {
-#if defined(LF_DISABLE_PLATFORM_ALLOCATOR)
         install_test_allocator();
-#endif
     }
 };
 
