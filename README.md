@@ -16,8 +16,8 @@ Engineered with strict **mechanical sympathy** to execute within a **$< 0.5\text
 
 * **Zero Heap Allocations in Steady State (Hard Invariant)**:  
   Every task node, dependency edge, and chunk closure allocates from a thread-local monotonic bump allocator ([`SlabArena`](docs/api/memory.md)) backed by virtual memory slab pools ([`BlockPool`](docs/api/memory.md)). Frame-to-frame graph reset is an instant $O(1)$ pointer reset.
-* **Pluggable Memory Discipline & Console Sandboxing**:  
-  Transparent memory hooks via `MemoryCallbacks` with sized and aligned deallocation, zero virtual dispatch, and pre-allocated static buffer arenas (`BlockPool::from_buffer`). Hardened console sandboxing (`LF_DISABLE_PLATFORM_ALLOCATOR`) physically compiles out all libc virtual memory calls (`posix_memalign`, `_aligned_malloc`) with strict fail-fast semantics and zero silent fallbacks to libc heap.
+* **Pluggable Memory Discipline & Engine Memory Ownership**:  
+  Transparent memory hooks via `MemoryCallbacks` with sized and aligned deallocation, zero virtual dispatch, and pre-allocated static buffer arenas (`BlockPool::from_buffer`). By default (`LF_DISABLE_PLATFORM_ALLOCATOR=ON`), all libc virtual memory calls (`posix_memalign`, `_aligned_malloc`) are physically compiled out of the binary with strict fail-fast semantics and zero silent fallbacks to libc heap.
 * **Lock-Free Work-Stealing Coordination**:  
   Workers utilize dynamic Chase-Lev ring-buffer deques paired with a dual-priority queue (strictly draining `High` priority critical-path tasks before `Normal` tasks) and multi-producer multi-consumer (MPMC) lock-free injection queues.
 * **Cacheline Packed & False-Sharing Immune**:  
@@ -285,7 +285,7 @@ Deep-dive architecture, exact C++23 signatures, mechanical sympathy contracts, a
 3. [**TaskScheduler & Execution Engine**](docs/api/scheduler.md):  
    Chase-Lev work-stealing, dual-priority coordination queues, two-tier adaptive spin + futex parking, and execution domains (`Worker`, `MainThread`, `IO`).
 4. [**Zero-Allocation Memory Hierarchy**](docs/api/memory.md):  
-   Virtual memory `BlockPool`, `MemoryCallbacks` dynamic chunk provider, `BlockPool::from_buffer` static arena factory, strict fail-fast invariants, console sandboxing (`LF_DISABLE_PLATFORM_ALLOCATOR`), thread-local `SlabArena`, `MoveOnlyTask` 48-byte SBO, and production engine recipes.
+   Virtual memory `BlockPool`, `MemoryCallbacks` dynamic chunk provider, `BlockPool::from_buffer` static arena factory, strict fail-fast invariants, platform allocator isolation (`LF_DISABLE_PLATFORM_ALLOCATOR`), thread-local `SlabArena`, `MoveOnlyTask` 48-byte SBO, and production engine recipes.
 5. [**GPU Timeline Semaphore Synchronization**](docs/api/gpu-timeline.md):  
    `TimelineSyncPoint`, non-blocking `TimelineReactor`, hardware watchdog protection, native Vulkan 1.3 `VK_KHR_synchronization2` mapping, and DX12/Metal recipes.
 
@@ -335,7 +335,8 @@ set(LF_ENABLE_VULKAN_HELPERS ON CACHE BOOL "" FORCE)
 # Build tests and comparison suites
 set(LF_BUILD_TESTS ON CACHE BOOL "" FORCE)
 
-# Strict console sandboxing is ON by default (zero libc virtual memory in binary).
+# Platform virtual memory is disabled by default (LF_DISABLE_PLATFORM_ALLOCATOR=ON)
+# to enforce total host engine memory ownership and zero libc allocations.
 # To opt into host platform virtual memory for standalone desktop CLI tools:
 # set(LF_DISABLE_PLATFORM_ALLOCATOR OFF CACHE BOOL "" FORCE)
 ```

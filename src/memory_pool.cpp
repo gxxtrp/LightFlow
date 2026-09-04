@@ -87,7 +87,7 @@ MemoryCallbacks resolve_default_callbacks() noexcept {
 #if !defined(LF_DISABLE_PLATFORM_ALLOCATOR)
     return platform_memory_callbacks();
 #else
-    LF_ASSERT(false && "BlockPool instantiated without memory callbacks in sandbox mode");
+    LF_ASSERT(false && "BlockPool instantiated without memory callbacks (LF_DISABLE_PLATFORM_ALLOCATOR is active; provide custom callbacks or call BlockPool::set_global_callbacks)");
     return MemoryCallbacks{};
 #endif
 }
@@ -396,7 +396,13 @@ BlockPool& BlockPool::global() noexcept {
         pool = s_globalPoolPtr.load(std::memory_order_relaxed);
         if (pool == nullptr) {
             s_globalPoolInitialized.store(true, std::memory_order_release);
-            LF_ASSERT(s_globalCallbacks.is_valid() && "BlockPool::global() accessed without valid memory callbacks in sandbox mode");
+            if (!s_globalCallbacks.is_valid()) {
+#if !defined(LF_DISABLE_PLATFORM_ALLOCATOR)
+                s_globalCallbacks = platform_memory_callbacks();
+#else
+                LF_ASSERT(false && "BlockPool::global() accessed without valid memory callbacks (call BlockPool::set_global_callbacks during engine bootstrap)");
+#endif
+            }
             pool = ::new (static_cast<void*>(s_globalPoolStorage)) BlockPool(s_globalCallbacks);
             s_globalPoolPtr.store(pool, std::memory_order_release);
         }
