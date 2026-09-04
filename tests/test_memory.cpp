@@ -13,9 +13,14 @@
 #include <vector>
 
 #if !defined(_WIN32)
+    #include <sys/mman.h>
     #include <sys/types.h>
     #include <sys/wait.h>
     #include <unistd.h>
+#else
+    #define WIN32_LEAN_AND_MEAN
+    #define NOMINMAX
+    #include <windows.h>
 #endif
 
 #if defined(__SANITIZE_THREAD__) || defined(__SANITIZE_ADDRESS__) || \
@@ -1004,4 +1009,288 @@ TEST_CASE("Custom allocator integration: multi-stage TaskGraph with parallelFor 
     lf::test::install_test_allocator();
 #endif
 }
+
+// =============================================================================
+// Documentation Engine Recipes Verification (docs/api/memory.md)
+// =============================================================================
+
+namespace doc_recipes {
+
+// Recipe 1: Dynamic OS Virtual Memory Provider
+inline void* os_virtual_alloc(lf::usize bytes, lf::usize alignment, void* /*user_data*/) noexcept {
+#if defined(_WIN32)
+    (void)alignment;
+    return ::VirtualAlloc(nullptr, bytes, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+#else
+    #if !defined(MAP_ANONYMOUS) && defined(MAP_ANON)
+        #define MAP_ANONYMOUS MAP_ANON
+    #endif
+
+    const long sys_page = ::sysconf(_SC_PAGESIZE);
+    const lf::usize page_size = (sys_page > 0) ? static_cast<lf::usize>(sys_page) : 4096;
+
+    if (alignment <= page_size) {
+        void* ptr = ::mmap(nullptr, bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        return (ptr == MAP_FAILED) ? nullptr : ptr;
+    }
+
+    const lf::usize total_reserve = bytes + alignment;
+    void* raw = ::mmap(nullptr, total_reserve, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (raw == MAP_FAILED) {
+        return nullptr;
+    }
+
+    const auto raw_addr = reinterpret_cast<std::uintptr_t>(raw);
+    const auto aligned_addr = (raw_addr + alignment - 1) & ~(alignment - 1);
+    const lf::usize prefix = aligned_addr - raw_addr;
+    const lf::usize suffix = total_reserve - prefix - bytes;
+
+    if (prefix > 0) {
+        ::munmap(raw, prefix);
+    }
+    if (suffix > 0) {
+        ::munmap(reinterpret_cast<void*>(aligned_addr + bytes), suffix);
+    }
+
+    return reinterpret_cast<void*>(aligned_addr);
+#endif
+}
+
+inline void os_virtual_free(void* ptr, lf::usize bytes, lf::usize /*alignment*/, void* /*user_data*/) noexcept {
+    if (ptr == nullptr) return;
+#if defined(_WIN32)
+    (void)bytes;
+    ::VirtualFree(ptr, 0, MEM_RELEASE);
+#else
+    ::munmap(ptr, bytes);
+#endif
+}
+
+inline lf::MemoryCallbacks make_virtual_memory_callbacks() noexcept {
+    return lf::MemoryCallbacks{
+        .alloc = &os_virtual_alloc,
+        .free = &os_virtual_free,
+        .user_data = nullptr
+    };
+}
+
+// Recipe 3: Subsystem Memory Telemetry & Budget Enforcement Tracker
+struct SubsystemBudgetTracker {
+    const char* name{nullptr};
+    lf::usize budget_bytes{0};
+    std::atomic<lf::usize> current_bytes{0};
+    std::atomic<lf::usize> peak_bytes{0};
+    std::atomic<lf::usize> alloc_count{0};
+    std::atomic<lf::usize> free_count{0};
+    lf::MemoryCallbacks backing_callbacks{};
+};
+
+inline void* budgeted_alloc(lf::usize bytes, lf::usize alignment, void* user_data) noexcept {
+    auto* tracker = static_cast<SubsystemBudgetTracker*>(user_data);
+    if (tracker == nullptr) return nullptr;
+
+    lf::usize current = tracker->current_bytes.load(std::memory_order_relaxed);
+    while (true) {
+        if (current + bytes > tracker->budget_bytes) {
+            return nullptr;
+        }
+        if (tracker->current_bytes.compare_exchange_weak(current, current + bytes,
+                                                         std::memory_order_acq_rel,
+                                                         std::memory_order_relaxed)) {
+            break;
+        }
+    }
+
+    void* ptr = tracker->backing_callbacks.alloc(bytes, alignment, tracker->backing_callbacks.user_data);
+    if (ptr == nullptr) {
+        tracker->current_bytes.fetch_sub(bytes, std::memory_order_relaxed);
+        return nullptr;
+    }
+
+    tracker->alloc_count.fetch_add(1, std::memory_order_relaxed);
+    lf::usize new_bytes = current + bytes;
+    lf::usize prev_peak = tracker->peak_bytes.load(std::memory_order_relaxed);
+    while (new_bytes > prev_peak &&
+           !tracker->peak_bytes.compare_exchange_weak(prev_peak, new_bytes,
+                                                      std::memory_order_relaxed)) {
+    }
+
+    return ptr;
+}
+
+inline void budgeted_free(void* ptr, lf::usize bytes, lf::usize alignment, void* user_data) noexcept {
+    if (ptr == nullptr) return;
+    auto* tracker = static_cast<SubsystemBudgetTracker*>(user_data);
+    if (tracker == nullptr) return;
+
+    tracker->backing_callbacks.free(ptr, bytes, alignment, tracker->backing_callbacks.user_data);
+    tracker->current_bytes.fetch_sub(bytes, std::memory_order_relaxed);
+    tracker->free_count.fetch_add(1, std::memory_order_relaxed);
+}
+
+} // namespace doc_recipes
+
+TEST_CASE("Doc Recipe: Dynamic OS Virtual Memory (mmap/VirtualAlloc)", "[memory][recipe]") {
+    lf::MemoryCallbacks callbacks = doc_recipes::make_virtual_memory_callbacks();
+    REQUIRE(callbacks.is_valid());
+
+    // Create pool backed by OS virtual memory pages
+    constexpr lf::usize INITIAL_SLABS = 4;
+    constexpr lf::usize CHUNK_SLABS = 4;
+    lf::BlockPool pool(callbacks, INITIAL_SLABS, CHUNK_SLABS, true);
+
+    REQUIRE(pool.total_slabs() == INITIAL_SLABS);
+    REQUIRE(pool.available_slabs() == INITIAL_SLABS);
+    REQUIRE(pool.chunk_count() == 1);
+
+    // Run TaskGraph on this pool
+    {
+        lf::TaskGraph graph(&pool);
+        std::atomic<int> counter{0};
+
+        auto t1 = graph.emplace("Init", [&counter]() noexcept {
+            counter.fetch_add(1, std::memory_order_relaxed);
+        });
+        auto t2 = graph.emplace("Compute", [&counter]() noexcept {
+            counter.fetch_add(2, std::memory_order_relaxed);
+        });
+        t1.precede(t2);
+
+        lf::SchedulerConfig config{.workerCount = 2};
+        lf::TaskScheduler scheduler(config);
+        lf::Status status = scheduler.runAndWait(graph);
+
+        REQUIRE(status == lf::Status::Success);
+        REQUIRE(counter.load() == 3);
+    }
+
+    // Dynamic growth: acquire all initial slabs plus an extra chunk
+    std::vector<lf::Slab*> slabs;
+    for (lf::usize i = 0; i < INITIAL_SLABS + 1; ++i) {
+        lf::Slab* s = pool.acquire_slab();
+        REQUIRE(s != nullptr);
+        slabs.push_back(s);
+    }
+    REQUIRE(pool.chunk_count() == 2);
+    REQUIRE(pool.total_slabs() == INITIAL_SLABS + CHUNK_SLABS);
+
+    for (lf::Slab* s : slabs) {
+        pool.release_slab(s);
+    }
+    REQUIRE(pool.available_slabs() == pool.total_slabs());
+}
+
+TEST_CASE("Doc Recipe: Pre-allocated Static Arena Buffer (from_buffer)", "[memory][recipe]") {
+    constexpr lf::usize STATIC_SLABS = 8;
+    constexpr lf::usize BUFFER_BYTES = lf::SLAB_SIZE * STATIC_SLABS;
+    void* renderBuffer = doc_recipes::os_virtual_alloc(BUFFER_BYTES, lf::SLAB_SIZE, nullptr);
+    REQUIRE(renderBuffer != nullptr);
+
+    // Create non-owning BlockPool from pre-allocated buffer
+    {
+        lf::BlockPool pool = lf::BlockPool::from_buffer(renderBuffer, BUFFER_BYTES);
+        REQUIRE(pool.total_slabs() == STATIC_SLABS);
+        REQUIRE(pool.available_slabs() == STATIC_SLABS);
+        REQUIRE(pool.chunk_count() == 1);
+
+        lf::TaskGraph graph(&pool);
+        std::atomic<int> sum{0};
+
+        auto parallelStage = graph.parallelFor("BufferWork", 1000, 100, [&sum](lf::usize) noexcept {
+            sum.fetch_add(1, std::memory_order_relaxed);
+        });
+
+        auto verifyStage = graph.emplace("Verify", [&sum]() noexcept {
+            (void)sum.load(std::memory_order_relaxed);
+        });
+        parallelStage.precede(verifyStage);
+
+        lf::SchedulerConfig config{.workerCount = 2};
+        lf::TaskScheduler scheduler(config);
+        lf::Status status = scheduler.runAndWait(graph);
+
+        REQUIRE(status == lf::Status::Success);
+        REQUIRE(sum.load() == 1000);
+    }
+
+    // Buffer remains owned by engine; pool destructs cleanly without OS deallocations.
+    // Engine frees its own buffer when appropriate:
+    doc_recipes::os_virtual_free(renderBuffer, BUFFER_BYTES, lf::SLAB_SIZE, nullptr);
+}
+
+TEST_CASE("Doc Recipe: Subsystem Memory Telemetry and Budget Enforcement", "[memory][recipe]") {
+    constexpr lf::usize BUDGET_SLABS = 4;
+    constexpr lf::usize BUDGET_BYTES = BUDGET_SLABS * lf::SLAB_SIZE;
+
+    doc_recipes::SubsystemBudgetTracker tracker{
+        .name = "RendererSubsystem",
+        .budget_bytes = BUDGET_BYTES,
+        .backing_callbacks = doc_recipes::make_virtual_memory_callbacks()
+    };
+
+    lf::MemoryCallbacks callbacks{
+        .alloc = &doc_recipes::budgeted_alloc,
+        .free = &doc_recipes::budgeted_free,
+        .user_data = &tracker
+    };
+
+    // Initialize pool with 2 slabs initially and 2 slabs per chunk
+    constexpr lf::usize INITIAL_SLABS = 2;
+    constexpr lf::usize CHUNK_SLABS = 2;
+    {
+        lf::BlockPool pool(callbacks, INITIAL_SLABS, CHUNK_SLABS, true);
+        REQUIRE(pool.total_slabs() == INITIAL_SLABS);
+        REQUIRE(tracker.alloc_count.load() == 1);
+        REQUIRE(tracker.current_bytes.load() == INITIAL_SLABS * lf::SLAB_SIZE);
+        REQUIRE(tracker.peak_bytes.load() == INITIAL_SLABS * lf::SLAB_SIZE);
+
+        // Execute task graph on budgeted pool
+        {
+            lf::TaskGraph graph(&pool);
+            std::atomic<bool> executed{false};
+            graph.emplace("BudgetedTask", [&executed]() noexcept {
+                executed.store(true, std::memory_order_release);
+            });
+
+            lf::SchedulerConfig config{.workerCount = 2};
+            lf::TaskScheduler scheduler(config);
+            lf::Status status = scheduler.runAndWait(graph);
+            REQUIRE(status == lf::Status::Success);
+            REQUIRE(executed.load(std::memory_order_acquire));
+            graph.clear();
+        }
+
+        // With graph cleared, all slabs are back in pool
+        REQUIRE(pool.available_slabs() == INITIAL_SLABS);
+
+        // Slabs are acquired:
+        // First 2 come from initial chunk.
+        // 3rd slab triggers chunk growth: +2 slabs (total = 4 slabs = 100% budget reached).
+        std::vector<lf::Slab*> slabs;
+        for (lf::usize i = 0; i < BUDGET_SLABS; ++i) {
+            lf::Slab* s = pool.acquire_slab();
+            REQUIRE(s != nullptr);
+            slabs.push_back(s);
+        }
+        REQUIRE(pool.total_slabs() == BUDGET_SLABS);
+        REQUIRE(pool.available_slabs() == 0);
+        REQUIRE(tracker.alloc_count.load() == 2);
+        REQUIRE(tracker.current_bytes.load() == BUDGET_BYTES);
+        REQUIRE(tracker.peak_bytes.load() == BUDGET_BYTES);
+
+        // Next chunk allocation would exceed budget: acquire must return nullptr (strict fail-fast)
+        lf::Slab* over_budget_slab = pool.acquire_slab();
+        REQUIRE(over_budget_slab == nullptr);
+
+        for (lf::Slab* s : slabs) {
+            pool.release_slab(s);
+        }
+    }
+
+    // After pool destruction, all memory is cleanly returned and telemetry balances
+    REQUIRE(tracker.current_bytes.load() == 0);
+    REQUIRE(tracker.free_count.load() == tracker.alloc_count.load());
+    REQUIRE(tracker.peak_bytes.load() == BUDGET_BYTES);
+}
+
 
