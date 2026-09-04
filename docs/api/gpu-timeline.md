@@ -2,7 +2,7 @@
 
 Modern real-time graphics pipelines require tight coordination between CPU task dispatch and asynchronous GPU execution. Blocking a CPU worker thread with synchronous graphics API calls (such as `vkWaitSemaphores`, `ID3D12Fence::SetEventOnCompletion`, or `clFinish`) wastes valuable CPU cores.
 
-LightFlow provides **first-class, non-blocking GPU timeline synchronization** through [`TimelineSyncPoint`](file:///Users/admin/Work/TEMP/task-scheduler/include/lightflow/gpu/timeline_sync_point.hpp) and the [`TimelineReactor`](file:///Users/admin/Work/TEMP/task-scheduler/include/lightflow/gpu/timeline_reactor.hpp).
+LightFlow provides **first-class, non-blocking GPU timeline synchronization** through [`TimelineSyncPoint`](../../include/lightflow/gpu/timeline_sync_point.hpp) and the [`TimelineReactor`](../../include/lightflow/gpu/timeline_reactor.hpp).
 
 ---
 
@@ -95,7 +95,7 @@ recordShadows.precede(postProcess);
 
 ## Interface Reference: `ITimelineDevice`
 
-To enable automatic background polling or querying of GPU progress, implement [`ITimelineDevice`](file:///Users/admin/Work/TEMP/task-scheduler/include/lightflow/gpu/timeline_device.hpp) and pass it to `SchedulerConfig::timelineDevice`.
+To enable automatic background polling or querying of GPU progress, implement [`ITimelineDevice`](../../include/lightflow/gpu/timeline_device.hpp) and pass it to `SchedulerConfig::timelineDevice`.
 
 ```cpp
 namespace lf {

@@ -38,10 +38,10 @@ flowchart TD
 ```
 
 ### 1. Tier 1: Virtual Memory `BlockPool`
-The [`BlockPool`](file:///Users/admin/Work/TEMP/task-scheduler/include/lightflow/core/memory_pool.hpp) acts as a centralized, thread-safe reservoir of contiguous memory slabs (default: 64 KB slabs, 2 MB super-slabs). It manages slab acquisition and reclamation. Slabs are never freed to the OS during frame execution; they are recycled in a concurrent free-list.
+The [`BlockPool`](../../include/lightflow/core/memory_pool.hpp) acts as a centralized, thread-safe reservoir of contiguous memory slabs (default: 64 KB slabs, 2 MB super-slabs). It manages slab acquisition and reclamation. Slabs are never freed to the OS during frame execution; they are recycled in a concurrent free-list.
 
 ### 2. Tier 2: Monotonic Bump `SlabArena`
-The [`SlabArena`](file:///Users/admin/Work/TEMP/task-scheduler/include/lightflow/core/slab_arena.hpp) provides lock-free, wait-free pointer-bump allocation.
+The [`SlabArena`](../../include/lightflow/core/slab_arena.hpp) provides lock-free, wait-free pointer-bump allocation.
 * **Fast Path (Inline Pointer Bump)**:  
   `currentOffset + size <= slabCapacity`. Allocation takes **$~40\text{ ns}$** (a single pointer addition).
 * **Slow Path (Slab Chaining)**:  
@@ -50,7 +50,7 @@ The [`SlabArena`](file:///Users/admin/Work/TEMP/task-scheduler/include/lightflow
   Calling `reset()` rolls the bump pointer back to byte 0 in $O(1)$. Slabs remain attached for the next frame, eliminating all subsequent slab acquisitions.
 
 ### 3. Tier 3: `MoveOnlyTask` (48-Byte SBO)
-Standard `std::function` allocates on the heap if captures exceed 16–24 bytes. LightFlow completely replaces `std::function` with [`MoveOnlyTask`](file:///Users/admin/Work/TEMP/task-scheduler/include/lightflow/task/move_only_task.hpp):
+Standard `std::function` allocates on the heap if captures exceed 16–24 bytes. LightFlow completely replaces `std::function` with [`MoveOnlyTask`](../../include/lightflow/task/move_only_task.hpp):
 * Fixed **48-byte Small Buffer Optimization (SBO)** inline storage.
 * Non-copyable (move-only), preserving unique resource ownership (e.g. `std::unique_ptr`, Vulkan handles).
 * Captures exceeding 48 bytes automatically allocate inside the graph's `SlabArena`, **never on the OS heap**.

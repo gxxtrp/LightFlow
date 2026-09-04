@@ -15,7 +15,7 @@ Engineered with strict **mechanical sympathy** to execute within a **$< 0.5\text
 ## Key Architectural Highlights
 
 * **Zero Heap Allocations in Steady State (Hard Invariant)**:  
-  Every task node, dependency edge, and chunk closure allocates from a thread-local monotonic bump allocator ([`SlabArena`](file:///Users/admin/Work/TEMP/task-scheduler/docs/api/memory.md)) backed by virtual memory slab pools ([`BlockPool`](file:///Users/admin/Work/TEMP/task-scheduler/docs/api/memory.md)). Frame-to-frame graph reset is an instant $O(1)$ pointer reset.
+  Every task node, dependency edge, and chunk closure allocates from a thread-local monotonic bump allocator ([`SlabArena`](docs/api/memory.md)) backed by virtual memory slab pools ([`BlockPool`](docs/api/memory.md)). Frame-to-frame graph reset is an instant $O(1)$ pointer reset.
 * **Lock-Free Work-Stealing Coordination**:  
   Workers utilize dynamic Chase-Lev ring-buffer deques paired with a dual-priority queue (strictly draining `High` priority critical-path tasks before `Normal` tasks) and multi-producer multi-consumer (MPMC) lock-free injection queues.
 * **Cacheline Packed & False-Sharing Immune**:  
@@ -23,9 +23,9 @@ Engineered with strict **mechanical sympathy** to execute within a **$< 0.5\text
 * **Two-Tier Adaptive Spin + Futex Parking**:  
   Idle workers spin with pause instructions (`_mm_pause` / `yield`) before falling back to OS-native futex parking via C++23 `std::atomic<uint32_t>::wait`. Zero `std::mutex` or `std::condition_variable` primitives on the hot execution path.
 * **Native GPU Timeline Synchronization**:  
-  Non-blocking CPU task suspension on GPU timeline semaphores ([`TimelineSyncPoint`](file:///Users/admin/Work/TEMP/task-scheduler/docs/api/gpu-timeline.md)) mapping directly to Vulkan 1.3 `VK_KHR_synchronization2`, DirectX 12 fences, and Metal shared events, guarded by hardware watchdog timers against GPU hangs.
+  Non-blocking CPU task suspension on GPU timeline semaphores ([`TimelineSyncPoint`](docs/api/gpu-timeline.md)) mapping directly to Vulkan 1.3 `VK_KHR_synchronization2`, DirectX 12 fences, and Metal shared events, guarded by hardware watchdog timers against GPU hangs.
 * **Dynamic Graph Mutation & Condition Branching**:  
-  Spawn dynamic sub-graphs on the fly via [`Subflow`](file:///Users/admin/Work/TEMP/task-scheduler/docs/api/task-graph.md) allocated wait-free from the worker's local slab. Dynamic condition nodes feature **Cascade Inactivation**, recursively skipping unselected downstream branches and resolving join barriers without executing ghost tasks.
+  Spawn dynamic sub-graphs on the fly via [`Subflow`](docs/api/task-graph.md) allocated wait-free from the worker's local slab. Dynamic condition nodes feature **Cascade Inactivation**, recursively skipping unselected downstream branches and resolving join barriers without executing ghost tasks.
 
 ---
 
@@ -78,7 +78,7 @@ flowchart TB
 
 Benchmarked against a production **Classic ThreadPool** baseline (`std::mutex` + `std::condition_variable` + `std::queue<std::function<void()>>`) on an 8-core CPU across 50 sweep points and up to **10,000,000 individual task nodes**.
 
-Explore the [Interactive HTML5/Canvas Benchmark Dashboard](file:///Users/admin/Work/TEMP/task-scheduler/docs/benchmarks/index.html).
+Explore the [Interactive HTML5/Canvas Benchmark Dashboard](docs/benchmarks/index.html).
 
 ### 10,000,000-Task Wavefront DAG Scaling
 
@@ -111,9 +111,11 @@ Explore the [Interactive HTML5/Canvas Benchmark Dashboard](file:///Users/admin/W
   </tr>
 </table>
 
-### Tracy Profiler Verification
+---
 
-Captured with Tracy Profiler v0.13.1 during a multi-iteration execution session ([`benchmark.tracy`](file:///Users/admin/Work/TEMP/task-scheduler/benchmark.tracy)):
+## Tracy Profiler Proof & Verification
+
+Captured with Tracy Profiler v0.13.1 during a multi-iteration execution session ([`benchmark.tracy`](benchmark.tracy)):
 
 ```
 Zone Name                 Calls       Total Time      Mean Time   Engine Reality
@@ -272,15 +274,15 @@ void renderFrame(
 
 Deep-dive architecture, exact C++23 signatures, mechanical sympathy contracts, and usage patterns are documented in five dedicated technical guides:
 
-1. [**TaskGraph & Graph Primitives**](file:///Users/admin/Work/TEMP/task-scheduler/docs/api/task-graph.md):  
+1. [**TaskGraph & Graph Primitives**](docs/api/task-graph.md):  
    Dual-state in-degrees, dependency chaining (`>>`, `.precede()`), dynamic `Subflow` generation, and `ConditionNode` dynamic branching with **Cascade Inactivation**.
-2. [**Data-Parallel Loops (`parallelFor`)**](file:///Users/admin/Work/TEMP/task-scheduler/docs/api/parallel-for.md):  
+2. [**Data-Parallel Loops (`parallelFor`)**](docs/api/parallel-for.md):  
    SIMD range partitioning, `ChunkRange`, span overloads, and understanding compute-bound vs orchestration-bound regimes under Amdahl's Law.
-3. [**TaskScheduler & Execution Engine**](file:///Users/admin/Work/TEMP/task-scheduler/docs/api/scheduler.md):  
+3. [**TaskScheduler & Execution Engine**](docs/api/scheduler.md):  
    Chase-Lev work-stealing, dual-priority coordination queues, two-tier adaptive spin + futex parking, and execution domains (`Worker`, `MainThread`, `IO`).
-4. [**Zero-Allocation Memory Hierarchy**](file:///Users/admin/Work/TEMP/task-scheduler/docs/api/memory.md):  
+4. [**Zero-Allocation Memory Hierarchy**](docs/api/memory.md):  
    Virtual memory `BlockPool`, thread-local `SlabArena`, `MoveOnlyTask` 48-byte SBO, and instructions for integrating custom engine page allocators.
-5. [**GPU Timeline Semaphore Synchronization**](file:///Users/admin/Work/TEMP/task-scheduler/docs/api/gpu-timeline.md):  
+5. [**GPU Timeline Semaphore Synchronization**](docs/api/gpu-timeline.md):  
    `TimelineSyncPoint`, non-blocking `TimelineReactor`, hardware watchdog protection, native Vulkan 1.3 `VK_KHR_synchronization2` mapping, and DX12/Metal recipes.
 
 ---
@@ -296,8 +298,8 @@ include(FetchContent)
 
 FetchContent_Declare(
     LightFlow
-    GIT_REPOSITORY https://github.com/your-org/lightflow.git
-    GIT_TAG        v1.0.0
+    GIT_REPOSITORY https://github.com/gxxtrp/LightFlow.git
+    GIT_TAG        v0.1.0
     GIT_SHALLOW    TRUE
 )
 

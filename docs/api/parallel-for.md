@@ -1,6 +1,6 @@
 # Data-Parallel Loops (`parallelFor`) API Reference
 
-LightFlow's [`parallelFor`](file:///Users/admin/Work/TEMP/task-scheduler/include/lightflow/task/parallel_for.hpp) provides a cache-conscious, zero-heap-allocation data-parallel loop abstraction directly integrated into the [`TaskGraph`](file:///Users/admin/Work/TEMP/task-scheduler/docs/api/task-graph.md).
+LightFlow's [`parallelFor`](../../include/lightflow/task/parallel_for.hpp) provides a cache-conscious, zero-heap-allocation data-parallel loop abstraction directly integrated into the [`TaskGraph`](task-graph.md).
 
 ---
 
@@ -33,7 +33,7 @@ flowchart LR
 * **Join Barrier Node**: Holds an `initialInDegree` equal to $\text{numChunks}$. Decrements atomically as each chunk completes. Upstream dependencies chaining off the returned [`ParallelForHandle`](#class-reference-parallelforhandle) wait on this join node.
 
 ### 2. Zero Heap Allocation Guarantee
-All chunk task nodes, dependency edges, and the shared lambda closure allocate monotonically from the graph's [`SlabArena`](file:///Users/admin/Work/TEMP/task-scheduler/docs/api/memory.md). Zero dynamic heap allocations (`malloc`/`new`) occur, regardless of how many chunks are created.
+All chunk task nodes, dependency edges, and the shared lambda closure allocate monotonically from the graph's [`SlabArena`](memory.md). Zero dynamic heap allocations (`malloc`/`new`) occur, regardless of how many chunks are created.
 
 ---
 
@@ -157,7 +157,7 @@ auto batchPass = graph.parallelFor("BatchWork", totalItems, 512,
 
 ## Class Reference: `ParallelForHandle`
 
-`ParallelForHandle` inherits from [`TaskHandle`](file:///Users/admin/Work/TEMP/task-scheduler/docs/api/task-graph.md#class-reference-taskhandle), meaning it transparently participates in dependency chaining.
+`ParallelForHandle` inherits from [`TaskHandle`](task-graph.md#class-reference-taskhandle), meaning it transparently participates in dependency chaining.
 
 ```cpp
 namespace lf {

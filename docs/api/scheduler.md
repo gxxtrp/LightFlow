@@ -1,13 +1,13 @@
 # TaskScheduler & Execution Engine API Reference
 
-The [`TaskScheduler`](file:///Users/admin/Work/TEMP/task-scheduler/include/lightflow/scheduler/task_scheduler.hpp) is LightFlow's persistent execution service. It manages worker threads, CPU core affinities, lock-free Chase-Lev work-stealing deques, two-tier adaptive spin-parking, and multi-domain task dispatch.
+The [`TaskScheduler`](../../include/lightflow/scheduler/task_scheduler.hpp) is LightFlow's persistent execution service. It manages worker threads, CPU core affinities, lock-free Chase-Lev work-stealing deques, two-tier adaptive spin-parking, and multi-domain task dispatch.
 
 ---
 
 ## Architectural Mechanics
 
 ### 1. Lock-Free Work-Stealing with Dual-Priority Queues
-Each worker thread owns a dedicated, cacheline-aligned [`DualPriorityQueue`](file:///Users/admin/Work/TEMP/task-scheduler/include/lightflow/scheduler/chase_lev_deque.hpp#L88) wrapping two Chase-Lev deques:
+Each worker thread owns a dedicated, cacheline-aligned [`DualPriorityQueue`](../../include/lightflow/scheduler/chase_lev_deque.hpp) wrapping two Chase-Lev deques:
 * **`m_high`**: Critical-path tasks (`TaskPriority::High`).
 * **`m_normal`**: Standard tasks (`TaskPriority::Normal`).
 

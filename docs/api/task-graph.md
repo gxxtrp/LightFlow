@@ -1,6 +1,6 @@
 # TaskGraph & Graph Primitives API Reference
 
-The [`TaskGraph`](file:///Users/admin/Work/TEMP/task-scheduler/include/lightflow/task/task_graph.hpp) is LightFlow's core directed acyclic graph (DAG) representation. It manages task dependencies, condition branching, dynamic subflow generation, and frame execution state.
+The [`TaskGraph`](../../include/lightflow/task/task_graph.hpp) is LightFlow's core directed acyclic graph (DAG) representation. It manages task dependencies, condition branching, dynamic subflow generation, and frame execution state.
 
 ---
 
@@ -37,7 +37,7 @@ explicit TaskGraph(BlockPool* pool = nullptr);
 ~TaskGraph() noexcept;
 ```
 * **Parameters**:
-  * `pool`: Optional pointer to an external [`BlockPool`](file:///Users/admin/Work/TEMP/task-scheduler/docs/api/memory.md). If `nullptr`, defaults to `BlockPool::global()`.
+  * `pool`: Optional pointer to an external [`BlockPool`](memory.md). If `nullptr`, defaults to `BlockPool::global()`.
 * **Allocation Guarantee**: Zero heap allocations. All memory allocates from the arena slabs.
 * **Complexity**: $O(1)$.
 
