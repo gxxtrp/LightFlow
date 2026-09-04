@@ -69,15 +69,9 @@ public:
     static constexpr usize DEFAULT_INITIAL_SLABS = 256; // 16 MB
     static constexpr usize DEFAULT_CHUNK_SLABS = 256;   // 16 MB
 
-#if !defined(LF_DISABLE_PLATFORM_ALLOCATOR)
     explicit BlockPool(usize initial_slabs = DEFAULT_INITIAL_SLABS,
                        usize chunk_slabs = DEFAULT_CHUNK_SLABS,
                        bool allow_growth = true) noexcept;
-#else
-    explicit BlockPool(usize initial_slabs = 0,
-                       usize chunk_slabs = DEFAULT_CHUNK_SLABS,
-                       bool allow_growth = false) noexcept;
-#endif
 
     explicit BlockPool(const MemoryCallbacks& callbacks,
                        usize initial_slabs = DEFAULT_INITIAL_SLABS,

@@ -52,15 +52,45 @@ MemoryCallbacks platform_memory_callbacks() noexcept {
         .user_data = nullptr
     };
 }
-
-BlockPool::BlockPool(usize initial_slabs, usize chunk_slabs, bool allow_growth) noexcept
-    : BlockPool(platform_memory_callbacks(), initial_slabs, chunk_slabs, allow_growth) {}
-#else
-BlockPool::BlockPool(usize initial_slabs, usize chunk_slabs, bool allow_growth) noexcept
-    : BlockPool(MemoryCallbacks{}, initial_slabs, chunk_slabs, allow_growth) {}
 #endif
 
 namespace {
+
+#if !defined(LF_DISABLE_PLATFORM_ALLOCATOR)
+MemoryCallbacks s_globalCallbacks = platform_memory_callbacks();
+#else
+MemoryCallbacks s_globalCallbacks = MemoryCallbacks{};
+#endif
+
+std::atomic<bool> s_globalPoolInitialized{false};
+alignas(BlockPool) std::byte s_globalPoolStorage[sizeof(BlockPool)];
+std::atomic<BlockPool*> s_globalPoolPtr{nullptr};
+std::mutex s_globalPoolMutex;
+
+struct GlobalPoolDestructor {
+    ~GlobalPoolDestructor() {
+        BlockPool* pool = s_globalPoolPtr.load(std::memory_order_relaxed);
+        if (pool != nullptr) {
+            pool->~BlockPool();
+            s_globalPoolPtr.store(nullptr, std::memory_order_relaxed);
+        }
+    }
+};
+
+GlobalPoolDestructor s_globalPoolDestructor;
+
+MemoryCallbacks resolve_default_callbacks() noexcept {
+    std::lock_guard<std::mutex> lock(s_globalPoolMutex);
+    if (s_globalCallbacks.is_valid()) {
+        return s_globalCallbacks;
+    }
+#if !defined(LF_DISABLE_PLATFORM_ALLOCATOR)
+    return platform_memory_callbacks();
+#else
+    LF_ASSERT(false && "BlockPool instantiated without memory callbacks in sandbox mode");
+    return MemoryCallbacks{};
+#endif
+}
 
 void partition_slab_chain(std::byte* base, usize count) noexcept {
     for (usize i = 0; i < count; ++i) {
@@ -73,6 +103,9 @@ void partition_slab_chain(std::byte* base, usize count) noexcept {
 }
 
 } // anonymous namespace
+
+BlockPool::BlockPool(usize initial_slabs, usize chunk_slabs, bool allow_growth) noexcept
+    : BlockPool(resolve_default_callbacks(), initial_slabs, chunk_slabs, allow_growth) {}
 
 BlockPool::BlockPool(const MemoryCallbacks& callbacks,
                      usize initial_slabs,
@@ -317,32 +350,6 @@ Slab* BlockPool::allocate_chunk_and_acquire() noexcept {
     return acquired;
 }
 
-namespace {
-
-#if !defined(LF_DISABLE_PLATFORM_ALLOCATOR)
-MemoryCallbacks s_globalCallbacks = platform_memory_callbacks();
-#else
-MemoryCallbacks s_globalCallbacks = MemoryCallbacks{};
-#endif
-
-std::atomic<bool> s_globalPoolInitialized{false};
-alignas(BlockPool) std::byte s_globalPoolStorage[sizeof(BlockPool)];
-std::atomic<BlockPool*> s_globalPoolPtr{nullptr};
-std::mutex s_globalPoolMutex;
-
-struct GlobalPoolDestructor {
-    ~GlobalPoolDestructor() {
-        BlockPool* pool = s_globalPoolPtr.load(std::memory_order_relaxed);
-        if (pool != nullptr) {
-            pool->~BlockPool();
-            s_globalPoolPtr.store(nullptr, std::memory_order_relaxed);
-        }
-    }
-};
-
-GlobalPoolDestructor s_globalPoolDestructor;
-
-} // anonymous namespace
 
 void BlockPool::set_global_callbacks(const MemoryCallbacks& callbacks) noexcept {
     LF_ASSERT(!s_globalPoolInitialized.load(std::memory_order_acquire) &&
@@ -389,6 +396,7 @@ BlockPool& BlockPool::global() noexcept {
         pool = s_globalPoolPtr.load(std::memory_order_relaxed);
         if (pool == nullptr) {
             s_globalPoolInitialized.store(true, std::memory_order_release);
+            LF_ASSERT(s_globalCallbacks.is_valid() && "BlockPool::global() accessed without valid memory callbacks in sandbox mode");
             pool = ::new (static_cast<void*>(s_globalPoolStorage)) BlockPool(s_globalCallbacks);
             s_globalPoolPtr.store(pool, std::memory_order_release);
         }

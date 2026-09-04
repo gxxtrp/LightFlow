@@ -170,7 +170,6 @@ using namespace lf;
 // Slab and BlockPool Memory Invariants
 // =============================================================================
 
-#if !defined(LF_DISABLE_PLATFORM_ALLOCATOR)
 TEST_CASE("Slab sizing and BlockPool acquire/release lifecycle", "[memory][slab]") {
     STATIC_REQUIRE(sizeof(Slab) == CACHELINE_SIZE);
     STATIC_REQUIRE(alignof(Slab) == CACHELINE_SIZE);
@@ -229,7 +228,6 @@ TEST_CASE("SlabArena monotonic bump allocation and alignment", "[memory][arena]"
     REQUIRE(p3 != nullptr);
     REQUIRE(p3 == p1); // Monotonic bump pointer reset to beginning
 }
-#endif
 
 // =============================================================================
 // MoveOnlyTask Small Buffer Optimization (SBO)
@@ -281,7 +279,6 @@ TEST_CASE("MoveOnlyTask 48-byte SBO inline execution and lifecycle", "[memory][t
 // Steady-State Zero-Allocation Guarantee
 // =============================================================================
 
-#if !defined(LF_DISABLE_PLATFORM_ALLOCATOR)
 TEST_CASE("Steady-state frame loop: Zero heap allocations across 100 frames", "[memory][zero_malloc]") {
     SchedulerConfig config{.workerCount = 4, .initialDequeCapacity = 2048};
     TaskScheduler scheduler(config);
@@ -331,7 +328,6 @@ TEST_CASE("Steady-state frame loop: Zero heap allocations across 100 frames", "[
     CHECK(lf::test::AllocationTracker::bytes() == 0);
 #endif
 }
-#endif
 
 // =============================================================================
 // Custom MemoryCallbacks & Sized Deallocation Tests
@@ -596,7 +592,6 @@ TEST_CASE("SlabArena integration with custom MemoryCallbacks BlockPool", "[memor
 }
 
 TEST_CASE("BlockPool default constructor backwards compatibility", "[memory][callbacks][compat]") {
-#if !defined(LF_DISABLE_PLATFORM_ALLOCATOR)
     BlockPool pool;
     REQUIRE(pool.callbacks().is_valid());
     REQUIRE(pool.total_slabs() == BlockPool::DEFAULT_INITIAL_SLABS);
@@ -608,13 +603,6 @@ TEST_CASE("BlockPool default constructor backwards compatibility", "[memory][cal
 
     pool.release_slab(slab);
     REQUIRE(pool.available_slabs() == BlockPool::DEFAULT_INITIAL_SLABS);
-#else
-    BlockPool pool;
-    REQUIRE_FALSE(pool.callbacks().is_valid());
-    REQUIRE(pool.total_slabs() == 0);
-    REQUIRE(pool.available_slabs() == 0);
-    REQUIRE(pool.acquire_slab() == nullptr);
-#endif
 }
 
 // =============================================================================
