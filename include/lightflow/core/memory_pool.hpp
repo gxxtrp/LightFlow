@@ -42,6 +42,26 @@ struct alignas(16) TaggedSlab {
     bool operator==(const TaggedSlab& other) const noexcept = default;
 };
 
+/// C-style function pointer callbacks for virtual memory chunk allocation and deallocation.
+/// Guarantees zero virtual dispatch, binary-stable across DLL boundaries, and -fno-rtti compatible.
+struct MemoryCallbacks {
+    using AllocFn = void* (*)(usize bytes, usize alignment, void* user_data) noexcept;
+    using FreeFn = void (*)(void* ptr, usize bytes, usize alignment, void* user_data) noexcept;
+
+    AllocFn alloc{nullptr};
+    FreeFn free{nullptr};
+    void* user_data{nullptr};
+
+    LF_NODISCARD constexpr bool is_valid() const noexcept {
+        return alloc != nullptr && free != nullptr;
+    }
+};
+
+#if !defined(LF_DISABLE_PLATFORM_ALLOCATOR)
+/// Returns the platform default MemoryCallbacks using posix_memalign / _aligned_malloc.
+LF_NODISCARD MemoryCallbacks platform_memory_callbacks() noexcept;
+#endif
+
 /// Central lock-free 64KB memory block pool.
 /// Manages virtual memory chunks divided into 64KB slabs with an atomic freelist stack.
 class alignas(CACHELINE_SIZE) BlockPool {
@@ -49,7 +69,14 @@ public:
     static constexpr usize DEFAULT_INITIAL_SLABS = 256; // 16 MB
     static constexpr usize DEFAULT_CHUNK_SLABS = 256;   // 16 MB
 
+#if !defined(LF_DISABLE_PLATFORM_ALLOCATOR)
     explicit BlockPool(usize initial_slabs = DEFAULT_INITIAL_SLABS,
+                       usize chunk_slabs = DEFAULT_CHUNK_SLABS,
+                       bool allow_growth = true) noexcept;
+#endif
+
+    explicit BlockPool(const MemoryCallbacks& callbacks,
+                       usize initial_slabs = DEFAULT_INITIAL_SLABS,
                        usize chunk_slabs = DEFAULT_CHUNK_SLABS,
                        bool allow_growth = true) noexcept;
 
@@ -85,6 +112,11 @@ public:
     /// Returns the number of contiguous virtual memory chunks currently allocated.
     LF_NODISCARD usize chunk_count() const noexcept;
 
+    /// Returns the memory callbacks configured for this BlockPool.
+    LF_NODISCARD const MemoryCallbacks& callbacks() const noexcept {
+        return m_callbacks;
+    }
+
 private:
     struct Chunk {
         void* base_ptr{nullptr};
@@ -106,6 +138,7 @@ private:
     std::atomic<usize> m_chunk_count{0};
     usize m_chunk_slabs{DEFAULT_CHUNK_SLABS};
     bool m_allow_growth{true};
+    MemoryCallbacks m_callbacks{};
 
     // Synchronized chunk list for RAII cleanup
     std::atomic<Chunk*> m_chunks{nullptr};

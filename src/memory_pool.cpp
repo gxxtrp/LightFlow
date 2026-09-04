@@ -15,9 +15,10 @@
 
 namespace lf {
 
+#if !defined(LF_DISABLE_PLATFORM_ALLOCATOR)
 namespace {
 
-void* allocate_aligned_memory(usize bytes, usize alignment) noexcept {
+void* platform_alloc(usize bytes, usize alignment, void* /*user_data*/) noexcept {
 #if defined(_WIN32)
     return _aligned_malloc(bytes, alignment);
 #else
@@ -30,7 +31,7 @@ void* allocate_aligned_memory(usize bytes, usize alignment) noexcept {
 #endif
 }
 
-void free_aligned_memory(void* ptr) noexcept {
+void platform_free(void* ptr, usize /*bytes*/, usize /*alignment*/, void* /*user_data*/) noexcept {
     if (ptr == nullptr) {
         return;
     }
@@ -41,19 +42,44 @@ void free_aligned_memory(void* ptr) noexcept {
 #endif
 }
 
-
 } // anonymous namespace
 
+MemoryCallbacks platform_memory_callbacks() noexcept {
+    return MemoryCallbacks{
+        .alloc = &platform_alloc,
+        .free = &platform_free,
+        .user_data = nullptr
+    };
+}
+
 BlockPool::BlockPool(usize initial_slabs, usize chunk_slabs, bool allow_growth) noexcept
+    : BlockPool(platform_memory_callbacks(), initial_slabs, chunk_slabs, allow_growth) {}
+#endif
+
+BlockPool::BlockPool(const MemoryCallbacks& callbacks,
+                     usize initial_slabs,
+                     usize chunk_slabs,
+                     bool allow_growth) noexcept
     : m_chunk_slabs(chunk_slabs > 0 ? chunk_slabs : DEFAULT_CHUNK_SLABS),
-      m_allow_growth(allow_growth) {
+      m_allow_growth(allow_growth),
+      m_callbacks(callbacks) {
+    LF_ASSERT(callbacks.alloc != nullptr && callbacks.free != nullptr);
+
+    if (!m_callbacks.is_valid()) {
+        m_allow_growth = false;
+        return;
+    }
+
     if (initial_slabs > 0) {
         usize total_bytes = initial_slabs * SLAB_SIZE;
-        void* raw_mem = allocate_aligned_memory(total_bytes, SLAB_SIZE);
-        LF_ASSERT(raw_mem != nullptr);
+        void* raw_mem = m_callbacks.alloc(total_bytes, SLAB_SIZE, m_callbacks.user_data);
 
         if (raw_mem != nullptr) {
             auto* chunk = new (std::nothrow) Chunk{raw_mem, initial_slabs, nullptr};
+            if (chunk == nullptr) {
+                m_callbacks.free(raw_mem, total_bytes, SLAB_SIZE, m_callbacks.user_data);
+                return;
+            }
             m_chunks.store(chunk, std::memory_order_relaxed);
 
             auto* base_bytes = static_cast<std::byte*>(raw_mem);
@@ -78,7 +104,9 @@ BlockPool::~BlockPool() noexcept {
     Chunk* current = m_chunks.load(std::memory_order_relaxed);
     while (current != nullptr) {
         Chunk* next = current->next;
-        free_aligned_memory(current->base_ptr);
+        if (m_callbacks.free != nullptr && current->base_ptr != nullptr) {
+            m_callbacks.free(current->base_ptr, current->slab_count * SLAB_SIZE, SLAB_SIZE, m_callbacks.user_data);
+        }
         delete current;
         current = next;
     }
@@ -142,6 +170,10 @@ usize BlockPool::chunk_count() const noexcept {
 
 Slab* BlockPool::allocate_chunk_and_acquire() noexcept {
     LF_ZONE_NAMED(zone, "BlockPool::allocate_chunk_and_acquire");
+    if (!m_callbacks.is_valid()) {
+        return nullptr;
+    }
+
     bool expected = false;
     while (!m_growth_lock.compare_exchange_weak(expected, true,
                                                 std::memory_order_acquire,
@@ -163,7 +195,7 @@ Slab* BlockPool::allocate_chunk_and_acquire() noexcept {
 
     usize count = m_chunk_slabs;
     usize total_bytes = count * SLAB_SIZE;
-    void* raw_mem = allocate_aligned_memory(total_bytes, SLAB_SIZE);
+    void* raw_mem = m_callbacks.alloc(total_bytes, SLAB_SIZE, m_callbacks.user_data);
     if (raw_mem == nullptr) {
         m_growth_lock.store(false, std::memory_order_release);
         return nullptr;
@@ -171,7 +203,7 @@ Slab* BlockPool::allocate_chunk_and_acquire() noexcept {
 
     auto* chunk = new (std::nothrow) Chunk{raw_mem, count, nullptr};
     if (chunk == nullptr) {
-        free_aligned_memory(raw_mem);
+        m_callbacks.free(raw_mem, total_bytes, SLAB_SIZE, m_callbacks.user_data);
         m_growth_lock.store(false, std::memory_order_release);
         return nullptr;
     }
